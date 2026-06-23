@@ -1,0 +1,118 @@
+import React, { useState } from 'react';
+import { Box, Typography, Button, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, Tabs, Tab } from '@mui/material';
+import FingerprintIcon from '@mui/icons-material/Fingerprint';
+import { useGetAttendanceQuery, useGetStaffSalaryQuery } from '../store/apiSlice';
+
+const HR: React.FC = () => {
+  const [tab, setTab] = useState(0);
+  const { data: attendance, isLoading: attLoading } = useGetAttendanceQuery();
+  const { data: staff, isLoading: staffLoading } = useGetStaffSalaryQuery();
+
+  const handleCheckIn = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      await fetch('/api/hr/attendance/checkin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ gpsLocation: 'Office', photoUrl: '' })
+      });
+      window.location.reload();
+    } catch (err) {
+      console.error('Check-in failed', err);
+    }
+  };
+
+  return (
+    <Box>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h4" fontWeight="bold">HR & Payroll</Typography>
+        <Button variant="contained" color="primary" startIcon={<FingerprintIcon />} onClick={handleCheckIn}>
+          Mark Attendance (Check-in)
+        </Button>
+      </Box>
+
+      <Paper sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+        <Tabs value={tab} onChange={(e, v) => setTab(v)}>
+          <Tab label="Attendance Logs" />
+          <Tab label="Staff Salary (Piece Rate)" />
+        </Tabs>
+      </Paper>
+
+      {tab === 0 && (
+        <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+          <Table>
+            <TableHead sx={{ backgroundColor: 'secondary.main' }}>
+              <TableRow>
+                <TableCell><strong>Employee Name</strong></TableCell>
+                <TableCell><strong>Department</strong></TableCell>
+                <TableCell><strong>Date</strong></TableCell>
+                <TableCell><strong>Check In Time</strong></TableCell>
+                <TableCell><strong>Status</strong></TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {attLoading ? (
+                <TableRow><TableCell colSpan={5} align="center">Loading...</TableCell></TableRow>
+              ) : attendance?.length === 0 ? (
+                <TableRow><TableCell colSpan={5} align="center">No attendance records found.</TableCell></TableRow>
+              ) : (
+                attendance?.map((record: any) => (
+                  <TableRow key={record.id} hover>
+                    <TableCell>{record.user?.name}</TableCell>
+                    <TableCell>{record.user?.department || 'N/A'}</TableCell>
+                    <TableCell>{new Date(record.date).toLocaleDateString()}</TableCell>
+                    <TableCell>{record.checkIn ? new Date(record.checkIn).toLocaleTimeString() : 'N/A'}</TableCell>
+                    <TableCell>
+                      <Chip 
+                        label={record.status.toUpperCase()} 
+                        color={record.status === 'present' ? 'success' : 'error'} 
+                        size="small" 
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+
+      {tab === 1 && (
+        <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+          <Table>
+            <TableHead sx={{ backgroundColor: 'secondary.main' }}>
+              <TableRow>
+                <TableCell><strong>Employee Name</strong></TableCell>
+                <TableCell><strong>Department</strong></TableCell>
+                <TableCell><strong>Total Hours</strong></TableCell>
+                <TableCell><strong>Total Sq.Ft. Produced</strong></TableCell>
+                <TableCell><strong>Piece Rate</strong></TableCell>
+                <TableCell><strong>Estimated Salary</strong></TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {staffLoading ? (
+                <TableRow><TableCell colSpan={6} align="center">Loading...</TableCell></TableRow>
+              ) : staff?.length === 0 ? (
+                <TableRow><TableCell colSpan={6} align="center">No staff records found.</TableCell></TableRow>
+              ) : (
+                staff?.map((s: any) => (
+                  <TableRow key={s.id} hover>
+                    <TableCell>{s.name}</TableCell>
+                    <TableCell>{s.department || 'N/A'}</TableCell>
+                    <TableCell>{s.totalHours} hrs</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>{s.totalSqFt} Sq.Ft</TableCell>
+                    <TableCell>₹{s.pieceRate || 0} / Sq.Ft</TableCell>
+                    <TableCell sx={{ color: 'success.main', fontWeight: 'bold' }}>₹{s.estimatedSalary?.toLocaleString()}</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+    </Box>
+  );
+};
+
+export default HR;
