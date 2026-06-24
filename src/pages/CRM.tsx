@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, Typography, Button, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, Select, FormControl, InputLabel, Autocomplete } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
@@ -9,6 +9,7 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CloseIcon from '@mui/icons-material/Close';
+import CameraAltIcon from '@mui/icons-material/CameraAlt';
 import { IconButton } from '@mui/material';
 import { useGetProjectsQuery, useCreateProjectMutation, useUpdateProjectMutation, useDeleteProjectMutation, useUploadFilesMutation } from '../store/apiSlice';
 
@@ -21,6 +22,74 @@ const CRM: React.FC = () => {
   const [uploadFiles, { isLoading: isUploading }] = useUploadFilesMutation();
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  
+  // Camera States
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+
+  React.useEffect(() => {
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [stream]);
+
+  const startCamera = async () => {
+    setIsCameraOpen(true);
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      setStream(mediaStream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+      }
+    } catch (err) {
+      console.error("Error accessing camera:", err);
+      alert("Could not access camera. Please check permissions.");
+      setIsCameraOpen(false);
+    }
+  };
+
+  const stopCamera = () => {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+    }
+    setIsCameraOpen(false);
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(async (blob) => {
+          if (blob) {
+            const fileName = `Captured_Client_Photo_${new Date().getTime()}.jpg`;
+            const file = new File([blob], fileName, { type: 'image/jpeg' });
+            stopCamera();
+            
+            const uploadData = new FormData();
+            uploadData.append('files', file);
+            try {
+              const res = await uploadFiles(uploadData).unwrap();
+              if (res.success && res.urls.length > 0) {
+                setFormData({ ...formData, customerPhoto: res.urls[0] });
+              }
+            } catch (err) {
+              console.error('Failed to upload client photo', err);
+            }
+          }
+        }, 'image/jpeg');
+      }
+    }
+  };
   
   // Filter States
   const [selectedFY, setSelectedFY] = useState('FY 2026-27');
@@ -366,33 +435,45 @@ const CRM: React.FC = () => {
                     </IconButton>
                   </Box>
                 ) : (
-                  <Button
-                    variant="outlined"
-                    component="label"
-                    sx={{ height: 80, width: 80, borderStyle: 'dashed', borderRadius: 2, display: 'flex', flexDirection: 'column', fontSize: '0.75rem', color: 'text.secondary', justifyContent: 'center', alignItems: 'center' }}
-                  >
-                    {isUploading ? 'Uploading...' : '+ Upload'}
-                    <input
-                      type="file"
-                      hidden
-                      accept="image/*"
-                      onChange={async (e) => {
-                        if (e.target.files && e.target.files.length > 0) {
-                          const file = e.target.files[0];
-                          const uploadData = new FormData();
-                          uploadData.append('files', file);
-                          try {
-                            const res = await uploadFiles(uploadData).unwrap();
-                            if (res.success && res.urls.length > 0) {
-                              setFormData({ ...formData, customerPhoto: res.urls[0] });
+                  <Box sx={{ display: 'flex', gap: 2 }}>
+                    <Button
+                      variant="outlined"
+                      component="label"
+                      disabled={isUploading}
+                      sx={{ height: 80, width: 80, borderStyle: 'dashed', borderColor: '#B38B36', bgcolor: '#FFFDF5', '&:hover': { bgcolor: '#FFF4E5' }, borderRadius: 2, display: 'flex', flexDirection: 'column', fontSize: '0.75rem', color: '#B38B36', justifyContent: 'center', alignItems: 'center', textTransform: 'none', fontWeight: 'bold' }}
+                    >
+                      {isUploading ? 'Uploading...' : '+ Upload'}
+                      <input
+                        type="file"
+                        hidden
+                        accept="image/*"
+                        onChange={async (e) => {
+                          if (e.target.files && e.target.files.length > 0) {
+                            const file = e.target.files[0];
+                            const uploadData = new FormData();
+                            uploadData.append('files', file);
+                            try {
+                              const res = await uploadFiles(uploadData).unwrap();
+                              if (res.success && res.urls.length > 0) {
+                                setFormData({ ...formData, customerPhoto: res.urls[0] });
+                              }
+                            } catch (err) {
+                              console.error('Failed to upload client photo', err);
                             }
-                          } catch (err) {
-                            console.error('Failed to upload client photo', err);
                           }
-                        }
-                      }}
-                    />
-                  </Button>
+                        }}
+                      />
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      disabled={isUploading}
+                      onClick={startCamera}
+                      sx={{ height: 80, width: 80, borderStyle: 'dashed', borderColor: '#B38B36', bgcolor: '#FFFDF5', '&:hover': { bgcolor: '#FFF4E5' }, borderRadius: 2, display: 'flex', flexDirection: 'column', fontSize: '0.75rem', color: '#B38B36', justifyContent: 'center', alignItems: 'center', textTransform: 'none', fontWeight: 'bold' }}
+                    >
+                      <Typography sx={{ fontSize: '1.25rem', mb: 0.5 }}>📷</Typography>
+                      Camera
+                    </Button>
+                  </Box>
                 )}
                 {formData.customerPhoto && (
                   <Typography variant="caption" color="success.main" sx={{ fontWeight: 'bold' }}>Photo Uploaded Successfully</Typography>
@@ -405,6 +486,52 @@ const CRM: React.FC = () => {
           <Button onClick={handleClose} color="inherit">Cancel</Button>
           <Button onClick={handleSubmit} variant="contained" color="primary">Save Enquiry</Button>
         </DialogActions>
+      </Dialog>
+
+      {/* CAMERA CAPTURE DIALOG */}
+      <Dialog 
+        open={isCameraOpen} 
+        onClose={stopCamera} 
+        maxWidth="md" 
+        fullWidth
+        PaperProps={{ sx: { bgcolor: '#1A1C29', color: '#FFF', borderRadius: 4, border: '1px solid #333' } }}
+      >
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 'bold' }}>
+          Take Photo
+          <IconButton onClick={stopCamera} sx={{ color: '#FFF' }}><CloseIcon /></IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 3 }}>
+          <Box sx={{ 
+            width: '100%', 
+            maxWidth: 600, 
+            bgcolor: '#000', 
+            borderRadius: 4, 
+            overflow: 'hidden',
+            display: 'flex', justifyContent: 'center', alignItems: 'center',
+            mb: 3, position: 'relative'
+          }}>
+            <video 
+              ref={videoRef} 
+              autoPlay 
+              playsInline 
+              style={{ width: '100%', height: 'auto', maxHeight: 400, objectFit: 'cover' }} 
+            />
+            <canvas ref={canvasRef} style={{ display: 'none' }} />
+          </Box>
+          <Button 
+            variant="contained" 
+            size="large" 
+            startIcon={<CameraAltIcon />} 
+            onClick={capturePhoto}
+            sx={{ 
+              bgcolor: '#10B981', color: '#FFF', 
+              fontWeight: 'bold', px: 6, py: 1.5, borderRadius: 2,
+              '&:hover': { bgcolor: '#059669' }
+            }}
+          >
+            Capture Photo
+          </Button>
+        </DialogContent>
       </Dialog>
     </Box>
   );

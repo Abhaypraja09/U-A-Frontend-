@@ -51,6 +51,7 @@ const ProjectDetails: React.FC = () => {
   const [designFinalizedDate, setDesignFinalizedDate] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [cameraPurpose, setCameraPurpose] = useState<'drawing' | 'clientPhoto'>('drawing');
 
   // Edit Drawing Dialog States
   const [isEditDrawingOpen, setIsEditDrawingOpen] = useState(false);
@@ -217,7 +218,8 @@ const ProjectDetails: React.FC = () => {
     };
   }, [stream]);
 
-  const startCamera = async () => {
+  const startCamera = async (purpose: 'drawing' | 'clientPhoto' = 'drawing') => {
+    setCameraPurpose(purpose);
     setIsCameraOpen(true);
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
@@ -253,31 +255,32 @@ const ProjectDetails: React.FC = () => {
           if (blob) {
             const fileName = `Captured_Photo_${new Date().getTime()}.jpg`;
             const file = new File([blob], fileName, { type: 'image/jpeg' });
+            stopCamera();
             
-            const currentStepVal = viewingStepOverride !== null ? viewingStepOverride : activeStep;
-            if (currentStepVal === 1 || currentStepVal === 4) {
-              stopCamera();
-              setIsUploading(true);
-              const formData = new FormData();
-              formData.append('files', file);
-              try {
-                const res = await uploadFiles(formData).unwrap();
-                const type = currentStepVal === 1 ? 'Reference Design' : 'Shop Drawing';
-                const title = currentStepVal === 1 ? 'Reference Design Photo' : 'Shop Drawing Photo';
-                for (const url of res.urls) {
+            setIsUploading(true);
+            const formData = new FormData();
+            formData.append('files', file);
+            try {
+              const res = await uploadFiles(formData).unwrap();
+              if (res.success && res.urls.length > 0) {
+                const url = res.urls[0];
+                if (cameraPurpose === 'clientPhoto') {
+                  setEditFormData(prev => ({ ...prev, customerPhoto: url }));
+                  setSnackbarMessage('Client photo captured successfully!');
+                } else {
+                  const currentStepVal = viewingStepOverride !== null ? viewingStepOverride : activeStep;
+                  const type = currentStepVal === 1 ? 'Reference Design' : 'Shop Drawing';
+                  const title = currentStepVal === 1 ? 'Reference Design Photo' : 'Shop Drawing Photo';
                   await addDrawing({ projectId: id, title, type, fileUrl: url }).unwrap();
+                  setSnackbarMessage('Drawing photo captured successfully!');
+                  refetchDrawings();
                 }
-                setSnackbarMessage('Photo uploaded successfully!');
-                refetchDrawings();
-              } catch (err) {
-                console.error(err);
-                setSnackbarMessage('Upload failed');
-              } finally {
-                setIsUploading(false);
               }
-            } else {
-              setDesignFiles(prev => [...prev, { name: fileName, url: URL.createObjectURL(file), file }]);
-              stopCamera();
+            } catch (err) {
+              console.error(err);
+              setSnackbarMessage('Upload failed');
+            } finally {
+              setIsUploading(false);
             }
           }
         }, 'image/jpeg');
@@ -1462,38 +1465,49 @@ const ProjectDetails: React.FC = () => {
                   </IconButton>
                 </Box>
               ) : (
-                <Button
-                  variant="outlined"
-                  component="label"
-                  disabled={isUploading}
-                  sx={{ height: 80, width: 80, borderStyle: 'dashed', borderRadius: 2, display: 'flex', flexDirection: 'column', fontSize: '0.75rem', color: 'text.secondary', justifyContent: 'center', alignItems: 'center' }}
-                >
-                  {isUploading ? 'Uploading...' : '+ Upload'}
-                  <input
-                    type="file"
-                    hidden
-                    accept="image/*"
-                    onChange={async (e) => {
-                      if (e.target.files && e.target.files.length > 0) {
-                        setIsUploading(true);
-                        const file = e.target.files[0];
-                        const uploadData = new FormData();
-                        uploadData.append('files', file);
-                        try {
-                          const res = await uploadFiles(uploadData).unwrap();
-                          if (res.success && res.urls.length > 0) {
-                            setEditFormData({ ...editFormData, customerPhoto: res.urls[0] });
+                <Box sx={{ display: 'flex', gap: 2 }}>
+                  <Button
+                    variant="outlined"
+                    component="label"
+                    disabled={isUploading}
+                    sx={{ height: 80, width: 80, borderStyle: 'dashed', borderColor: '#B38B36', bgcolor: '#FFFDF5', '&:hover': { bgcolor: '#FFF4E5' }, borderRadius: 2, display: 'flex', flexDirection: 'column', fontSize: '0.75rem', color: '#B38B36', justifyContent: 'center', alignItems: 'center', textTransform: 'none', fontWeight: 'bold' }}
+                  >
+                    {isUploading ? 'Uploading...' : '+ Upload'}
+                    <input
+                      type="file"
+                      hidden
+                      accept="image/*"
+                      onChange={async (e) => {
+                        if (e.target.files && e.target.files.length > 0) {
+                          setIsUploading(true);
+                          const file = e.target.files[0];
+                          const uploadData = new FormData();
+                          uploadData.append('files', file);
+                          try {
+                            const res = await uploadFiles(uploadData).unwrap();
+                            if (res.success && res.urls.length > 0) {
+                              setEditFormData({ ...editFormData, customerPhoto: res.urls[0] });
+                            }
+                          } catch (err) {
+                            console.error('Failed to upload client photo', err);
+                            setSnackbarMessage('Upload failed');
+                          } finally {
+                            setIsUploading(false);
                           }
-                        } catch (err) {
-                          console.error('Failed to upload client photo', err);
-                          setSnackbarMessage('Upload failed');
-                        } finally {
-                          setIsUploading(false);
                         }
-                      }
-                    }}
-                  />
-                </Button>
+                      }}
+                    />
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    disabled={isUploading}
+                    onClick={() => startCamera('clientPhoto')}
+                    sx={{ height: 80, width: 80, borderStyle: 'dashed', borderColor: '#B38B36', bgcolor: '#FFFDF5', '&:hover': { bgcolor: '#FFF4E5' }, borderRadius: 2, display: 'flex', flexDirection: 'column', fontSize: '0.75rem', color: '#B38B36', justifyContent: 'center', alignItems: 'center', textTransform: 'none', fontWeight: 'bold' }}
+                  >
+                    <Typography sx={{ fontSize: '1.25rem', mb: 0.5 }}>📷</Typography>
+                    Camera
+                  </Button>
+                </Box>
               )}
             </Box>
           </Box>
