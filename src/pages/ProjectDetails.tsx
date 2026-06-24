@@ -1,17 +1,28 @@
 import React, { useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Box, Typography, Button, Paper, Stepper, Step, StepLabel, TextField, Divider, Chip, Dialog, DialogTitle, DialogContent, IconButton, Avatar, Select, MenuItem, FormControl, InputLabel, Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from '@mui/material';
+import { Box, Typography, Button, Paper, Stepper, Step, StepLabel, TextField, Divider, Chip, Dialog, DialogTitle, DialogContent, IconButton, Avatar, Select, MenuItem, FormControl, InputLabel, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Autocomplete, Snackbar, createFilterOptions } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import FolderSpecialIcon from '@mui/icons-material/FolderSpecial';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CloseIcon from '@mui/icons-material/Close';
+import RemoveIcon from '@mui/icons-material/Remove';
 import CameraAltIcon from '@mui/icons-material/CameraAlt';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
-import { useGetProjectByIdQuery, useUpdateProjectMutation, useCreateQuotationMutation, useCreateInvoiceMutation, useUploadFilesMutation, useGetDrawingsQuery, useAddDrawingMutation, useApproveDrawingMutation } from '../store/apiSlice';
+import { 
+  useGetProjectByIdQuery, useUpdateProjectMutation, useCreateQuotationMutation, 
+  useCreateInvoiceMutation, useUploadFilesMutation, useGetDrawingsQuery, 
+  useAddDrawingMutation, useApproveDrawingMutation,
+  useGetProjectMaterialsQuery, useReserveProjectMaterialMutation,
+  useGetProjectProductionLogsQuery, useCreateProductionLogMutation, useUpdateProductionLogMutation,
+  useGetInventoryQuery, useGetCategoriesQuery, useCreateCategoryMutation, useDeleteCategoryMutation,
+  useGetUnitsQuery, useCreateUnitMutation, useDeleteUnitMutation
+} from '../store/apiSlice';
 import { generateReceiptPDF, generateWorkOrderPDF } from '../utils/pdfGenerator';
 
-const steps = ['Enquiry Details', 'Quotation Sharing', 'Quotation & Costing', 'Advance Payment', 'Shop Drawing & Approval'];
+const steps = ['Enquiry Details', 'Reference Image', 'Quotation & Costing', 'Advance Payment', 'Shop Drawing & Approval', 'Material Planning', 'Production'];
+
+const filter = createFilterOptions<any>();
 
 const ProjectDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -25,29 +36,46 @@ const ProjectDetails: React.FC = () => {
   const [addDrawing] = useAddDrawingMutation();
   const [approveDrawing] = useApproveDrawingMutation();
 
+  const { data: projectMaterials, refetch: refetchMaterials } = useGetProjectMaterialsQuery(id as string, { skip: !id });
+  const [reserveMaterial] = useReserveProjectMaterialMutation();
+  const { data: productionLogs, refetch: refetchProduction } = useGetProjectProductionLogsQuery(id as string, { skip: !id });
+  const [createProductionLog] = useCreateProductionLogMutation();
+  const [updateProductionLog] = useUpdateProductionLogMutation();
+  const { data: inventoryItems } = useGetInventoryQuery();
+
   const [activeStep, setActiveStep] = useState(0);
 
   // Edit Dialog States
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editFormData, setEditFormData] = useState({
+    name: '',
+    clientName: '',
     clientContact: '',
     enquirySource: '',
-    description: ''
+    location: '',
+    description: '',
+    createdAt: ''
   });
 
   // Form states
   const [designFiles, setDesignFiles] = useState<{name: string, url: string, file?: File | Blob}[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [customerPhoto, setCustomerPhoto] = useState<string | null>(null);
+  const [previewFileUrl, setPreviewFileUrl] = useState<string | null>(null);
+  const [isProductDialogOpen, setIsProductDialogOpen] = useState(false);
+  const [editingProducts, setEditingProducts] = useState<Product[]>([]);
+  const [reserveDialogOpen, setReserveDialogOpen] = useState(false);
+  const [selectedInventoryItem, setSelectedInventoryItem] = useState<any>(null);
+  const [reserveQty, setReserveQty] = useState('');
+  const [snackbarMessage, setSnackbarMessage] = useState('');
   
   type Product = {
     id: string;
     category: string;
     unit: string;
-    lengthFt: number;
-    lengthIn: number;
-    widthFt: number;
-    widthIn: number;
+    length: number;
+    width: number;
+    breadth: number;
     qty: number;
     rate: number;
     amount: number;
@@ -72,6 +100,14 @@ const ProjectDetails: React.FC = () => {
 
   const [advancePayment, setAdvancePayment] = useState(0);
 
+  const { data: categories = [] } = useGetCategoriesQuery();
+  const [createCategory] = useCreateCategoryMutation();
+  const [deleteCategory] = useDeleteCategoryMutation();
+
+  const { data: units = [] } = useGetUnitsQuery();
+  const [createUnit] = useCreateUnitMutation();
+  const [deleteUnit] = useDeleteUnitMutation();
+
   // Camera States
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -85,7 +121,9 @@ const ProjectDetails: React.FC = () => {
     if (status === 'quotation') return 2;
     if (status === 'advance_payment') return 3;
     if (status === 'shop_drawing') return 4;
-    if (status === 'work_order' || status === 'completed') return 5;
+    if (status === 'material_planning') return 5;
+    if (status === 'production') return 6;
+    if (status === 'work_order' || status === 'completed') return 7;
     return 0;
   };
 
@@ -101,6 +139,9 @@ const ProjectDetails: React.FC = () => {
       }
       if (project.customerPhoto) {
         setCustomerPhoto(project.customerPhoto);
+      }
+      if (project.invoices && project.invoices.length > 0) {
+        setAdvancePayment(project.invoices[0].advancePaid || 0);
       }
     }
   }, [project]);
@@ -124,7 +165,7 @@ const ProjectDetails: React.FC = () => {
       }
     } catch (err) {
       console.error("Error accessing camera:", err);
-      alert("Could not access camera. Please check permissions.");
+      setSnackbarMessage("Could not access camera. Please check permissions.");
       setIsCameraOpen(false);
     }
   };
@@ -146,12 +187,33 @@ const ProjectDetails: React.FC = () => {
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        canvas.toBlob((blob) => {
+        canvas.toBlob(async (blob) => {
           if (blob) {
             const fileName = `Captured_Photo_${new Date().getTime()}.jpg`;
             const file = new File([blob], fileName, { type: 'image/jpeg' });
-            setDesignFiles(prev => [...prev, { name: fileName, url: URL.createObjectURL(file), file }]);
-            stopCamera();
+            
+            if (activeStep === 4) {
+              stopCamera();
+              setIsUploading(true);
+              const formData = new FormData();
+              formData.append('files', file);
+              try {
+                const res = await uploadFiles(formData).unwrap();
+                for (const url of res.urls) {
+                  await addDrawing({ projectId: id, title: 'Shop Drawing Photo', type: 'Shop Drawing', fileUrl: url }).unwrap();
+                }
+                setSnackbarMessage('Photo uploaded successfully!');
+                refetchDrawings();
+              } catch (err) {
+                console.error(err);
+                setSnackbarMessage('Upload failed');
+              } finally {
+                setIsUploading(false);
+              }
+            } else {
+              setDesignFiles(prev => [...prev, { name: fileName, url: URL.createObjectURL(file), file }]);
+              stopCamera();
+            }
           }
         }, 'image/jpeg');
       }
@@ -162,13 +224,12 @@ const ProjectDetails: React.FC = () => {
 
   const calculateAmount = (p: Product) => {
     let amount = 0;
-    if (p.unit === 'Sq. Ft') {
-      const lengthDec = p.lengthFt + p.lengthIn / 12;
-      const widthDec = p.widthFt + p.widthIn / 12;
-      amount = lengthDec * widthDec * p.qty * p.rate;
-    } else if (p.unit === 'Running Ft') {
-      const lengthDec = p.lengthFt + p.lengthIn / 12;
-      amount = lengthDec * p.qty * p.rate;
+    const lengthDec = p.length || 0;
+    const widthDec = p.width || 0;
+    const breadthDec = p.breadth || 1; // Default to 1 if breadth is 0
+
+    if (p.unit !== 'Pieces') {
+      amount = lengthDec * widthDec * breadthDec * p.qty * p.rate;
     } else {
       amount = p.qty * p.rate;
     }
@@ -176,25 +237,60 @@ const ProjectDetails: React.FC = () => {
   };
 
   const handleAddProduct = () => {
-    setProducts([...products, {
+    setEditingProducts([{
       id: Date.now().toString(),
-      category: 'Stone Name Plate',
-      unit: 'Sq. Ft',
+      category: '',
+      unit: '',
       lengthFt: 0, lengthIn: 0,
       widthFt: 0, widthIn: 0,
+      breadthFt: 0, breadthIn: 0,
+      qty: 1, rate: 0, amount: 0
+    }]);
+    setIsProductDialogOpen(true);
+  };
+
+  const handleEditProduct = (p: Product) => {
+    setEditingProducts([p]);
+    setIsProductDialogOpen(true);
+  };
+
+  const handleUpdateEditingProduct = (index: number, field: string, value: any) => {
+    const updatedArray = [...editingProducts];
+    const updated = { ...updatedArray[index], [field]: value };
+    updated.amount = calculateAmount(updated);
+    updatedArray[index] = updated;
+    setEditingProducts(updatedArray);
+  };
+
+  const handleAddNewRow = () => {
+    setEditingProducts([...editingProducts, {
+      id: Date.now().toString() + Math.random().toString(),
+      category: '',
+      unit: '',
+      length: 0,
+      width: 0,
+      breadth: 0,
       qty: 1, rate: 0, amount: 0
     }]);
   };
 
-  const handleUpdateProduct = (id: string, field: keyof Product, value: any) => {
-    setProducts(products.map(p => {
-      if (p.id === id) {
-        const updated = { ...p, [field]: value };
-        updated.amount = calculateAmount(updated);
-        return updated;
+  const handleRemoveRow = (index: number) => {
+    setEditingProducts(editingProducts.filter((_, i) => i !== index));
+  };
+
+  const handleSaveProducts = () => {
+    let newProducts = [...products];
+    editingProducts.forEach(ep => {
+      const existingIdx = newProducts.findIndex(p => p.id === ep.id);
+      if (existingIdx >= 0) {
+        newProducts[existingIdx] = ep;
+      } else {
+        newProducts.push(ep);
       }
-      return p;
-    }));
+    });
+    setProducts(newProducts);
+    setIsProductDialogOpen(false);
+    setEditingProducts([]);
   };
 
   const handleRemoveProduct = (id: string) => {
@@ -229,10 +325,11 @@ const ProjectDetails: React.FC = () => {
       }
 
       await updateProject({ id: id as string, data: { status: 'quotation', designFiles: allUrls } }).unwrap();
+      setActiveStep(getStepIndex('quotation'));
       refetch();
     } catch (err) {
       console.error("Failed to proceed to costing", err);
-      alert("Error saving data before proceeding.");
+      setSnackbarMessage("Error saving data before proceeding.");
     } finally {
       setIsUploading(false);
     }
@@ -249,16 +346,9 @@ const ProjectDetails: React.FC = () => {
 
   const handleAdvancePayment = async () => {
     try {
-      await createInvoice({
-        projectId: id,
-        totalAmount: advancePayment,
-        advancePaid: advancePayment
-      }).unwrap();
-      
-      await updateProject({ id: id as string, data: { status: 'shop_drawing' } }).unwrap();
-      setActiveStep(4);
-      refetch();
-      alert("Payment recorded! Proceeding to Shop Drawings.");
+      await createInvoice({ projectId: id, amount: products.reduce((acc, p) => acc + p.amount, 0), advancePaid: advancePayment, remarks: 'Advance Payment' }).unwrap();
+      await handleNextStage('shop_drawing');
+      setSnackbarMessage("Payment recorded! Proceeding to Shop Drawings.");
     } catch (err) {
       console.error(err);
     }
@@ -352,9 +442,13 @@ const ProjectDetails: React.FC = () => {
                 </Box>
                 <Button variant="outlined" startIcon={<EditIcon />} onClick={() => {
                   setEditFormData({
+                    name: project.name || '',
+                    clientName: project.clientName || '',
                     clientContact: project.clientContact || '',
                     enquirySource: project.enquirySource || '',
-                    description: project.description || ''
+                    location: project.location || '',
+                    description: project.description || '',
+                    createdAt: project.createdAt ? new Date(project.createdAt).toISOString().split('T')[0] : ''
                   });
                   setIsEditDialogOpen(true);
                 }}>Edit Details</Button>
@@ -396,19 +490,19 @@ const ProjectDetails: React.FC = () => {
               <Divider sx={{ my: 4 }} />
               <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <Button variant="contained" size="large" onClick={() => handleNextStage('design_sharing')} sx={{ px: 4, py: 1.5, borderRadius: 2 }}>
-                  Proceed to Quotation Sharing
+                  Proceed to Reference Image
                 </Button>
               </Box>
             </Paper>
           )}
 
-          {/* STEP 1: QUOTATION SHARING (Previously Design Finalization) */}
+          {/* STEP 1: REFERENCE IMAGE (Previously Quotation Sharing / Design Finalization) */}
           {activeStep === 1 && (
             <Paper elevation={0} sx={{ p: 5, border: '1px solid', borderColor: '#E8E1D5', borderRadius: 4, boxShadow: '0px 4px 20px rgba(0, 0, 0, 0.02)' }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
                 <Box>
-                  <Typography variant="h5" fontWeight="bold" color="text.primary">Quotation Sharing & Design</Typography>
-                  <Typography variant="body1" color="text.secondary" mt={1}>Upload CAD drawings, material selections, and 3D renders from your device.</Typography>
+                  <Typography variant="h5" fontWeight="bold" color="text.primary">Reference Image</Typography>
+                  <Typography variant="body1" color="text.secondary" mt={1}>Upload reference images, material selections, and inspiration photos from your device.</Typography>
                   <Typography variant="body2" color="text.secondary" mt={1}><strong>Date:</strong> {new Date().toLocaleDateString('en-GB')}</Typography>
                 </Box>
                 
@@ -504,53 +598,42 @@ const ProjectDetails: React.FC = () => {
                   <Typography variant="h6" fontWeight="bold">Product Estimation</Typography>
                   <Button variant="contained" onClick={handleAddProduct} sx={{ borderRadius: 2 }}>+ Add Product</Button>
                 </Box>
-                <TableContainer>
-                  <Table size="small">
-                    <TableHead sx={{ bgcolor: '#EEEEEE' }}>
+                <TableContainer sx={{ border: '1px solid #E0E0E0', borderRadius: 2, mb: 2, overflowX: 'auto', '&::-webkit-scrollbar': { height: 8 }, '&::-webkit-scrollbar-thumb': { bgcolor: '#CCC', borderRadius: 4 } }}>
+                  <Table size="small" sx={{ minWidth: 850 }}>
+                    <TableHead sx={{ bgcolor: '#F5F5F5' }}>
                       <TableRow>
-                        <TableCell><strong>Category</strong></TableCell>
-                        <TableCell><strong>Unit</strong></TableCell>
-                        <TableCell><strong>L (Ft, In)</strong></TableCell>
-                        <TableCell><strong>W (Ft, In)</strong></TableCell>
-                        <TableCell><strong>Qty</strong></TableCell>
-                        <TableCell><strong>Rate</strong></TableCell>
-                        <TableCell><strong>Amount</strong></TableCell>
-                        <TableCell></TableCell>
+                        <TableCell sx={{ py: 1.5, fontWeight: 'bold', color: 'text.secondary' }}>Category</TableCell>
+                        <TableCell sx={{ py: 1.5, fontWeight: 'bold', color: 'text.secondary' }}>Unit</TableCell>
+                        <TableCell sx={{ py: 1.5, fontWeight: 'bold', color: 'text.secondary' }}>Length</TableCell>
+                        <TableCell sx={{ py: 1.5, fontWeight: 'bold', color: 'text.secondary' }}>Width</TableCell>
+                        <TableCell sx={{ py: 1.5, fontWeight: 'bold', color: 'text.secondary' }}>Qty</TableCell>
+                        <TableCell sx={{ py: 1.5, fontWeight: 'bold', color: 'text.secondary' }}>Rate</TableCell>
+                        <TableCell sx={{ py: 1.5, fontWeight: 'bold', color: 'text.secondary' }}>Amount</TableCell>
+                        <TableCell sx={{ py: 1.5 }}></TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
                       {products.map(p => (
-                        <TableRow key={p.id}>
+                        <TableRow key={p.id} sx={{ '& td': { borderBottom: '1px solid #F0F0F0', py: 1.5 } }}>
+                          <TableCell><Typography variant="body2">{p.category}</Typography></TableCell>
+                          <TableCell><Typography variant="body2">{p.unit}</Typography></TableCell>
                           <TableCell>
-                            <Select size="small" value={p.category} onChange={e => handleUpdateProduct(p.id, 'category', e.target.value)} sx={{ width: 160 }}>
-                              {['Stone Name Plate', 'God Panel', 'Stone Table Top', 'Antique Panel', 'Stone Basin', 'Wall Cladding', 'Modern Art', 'Semiprecious Slab'].map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}
-                            </Select>
-                          </TableCell>
-                          <TableCell>
-                            <Select size="small" value={p.unit} onChange={e => handleUpdateProduct(p.id, 'unit', e.target.value)} sx={{ width: 120 }}>
-                              <MenuItem value="Sq. Ft">Sq. Ft</MenuItem>
-                              <MenuItem value="Running Ft">Running Ft</MenuItem>
-                              <MenuItem value="Pieces">Pieces</MenuItem>
-                            </Select>
-                          </TableCell>
-                          <TableCell sx={{ display: 'flex', gap: 1 }}>
-                            <TextField size="small" type="number" sx={{ width: 60 }} label="Ft" value={p.lengthFt === 0 ? '' : p.lengthFt} onChange={e => handleUpdateProduct(p.id, 'lengthFt', Number(e.target.value))} disabled={p.unit === 'Pieces'} />
-                            <TextField size="small" type="number" sx={{ width: 60 }} label="In" value={p.lengthIn === 0 ? '' : p.lengthIn} onChange={e => handleUpdateProduct(p.id, 'lengthIn', Number(e.target.value))} disabled={p.unit === 'Pieces'} />
+                            {p.unit !== 'Pieces' ? <Typography variant="body2">{p.lengthFt}' {p.lengthIn}"</Typography> : <Typography variant="body2" color="text.secondary">-</Typography>}
                           </TableCell>
                           <TableCell>
-                            <Box sx={{ display: 'flex', gap: 1 }}>
-                              <TextField size="small" type="number" sx={{ width: 60 }} label="Ft" value={p.widthFt === 0 ? '' : p.widthFt} onChange={e => handleUpdateProduct(p.id, 'widthFt', Number(e.target.value))} disabled={p.unit === 'Pieces' || p.unit === 'Running Ft'} />
-                              <TextField size="small" type="number" sx={{ width: 60 }} label="In" value={p.widthIn === 0 ? '' : p.widthIn} onChange={e => handleUpdateProduct(p.id, 'widthIn', Number(e.target.value))} disabled={p.unit === 'Pieces' || p.unit === 'Running Ft'} />
-                            </Box>
+                            {p.unit === 'Sq. Ft' ? <Typography variant="body2">{p.widthFt}' {p.widthIn}"</Typography> : <Typography variant="body2" color="text.secondary">-</Typography>}
                           </TableCell>
-                          <TableCell><TextField size="small" type="number" sx={{ width: 70 }} value={p.qty === 0 ? '' : p.qty} onChange={e => handleUpdateProduct(p.id, 'qty', Number(e.target.value))} /></TableCell>
-                          <TableCell><TextField size="small" type="number" sx={{ width: 100 }} value={p.rate === 0 ? '' : p.rate} onChange={e => handleUpdateProduct(p.id, 'rate', Number(e.target.value))} /></TableCell>
-                          <TableCell><Typography fontWeight="bold">₹{p.amount.toLocaleString('en-IN')}</Typography></TableCell>
-                          <TableCell><IconButton color="error" onClick={() => handleRemoveProduct(p.id)}><DeleteIcon /></IconButton></TableCell>
+                          <TableCell><Typography variant="body2">{p.qty}</Typography></TableCell>
+                          <TableCell><Typography variant="body2">₹{p.rate.toLocaleString('en-IN')}</Typography></TableCell>
+                          <TableCell><Typography variant="body2" fontWeight="bold" color="#B38B36">₹{p.amount.toLocaleString('en-IN')}</Typography></TableCell>
+                          <TableCell align="right">
+                            <IconButton color="primary" size="small" onClick={() => handleEditProduct(p)} sx={{ mr: 1, bgcolor: '#E3F2FD', '&:hover': { bgcolor: '#BBDEFB' } }}><EditIcon fontSize="small" /></IconButton>
+                            <IconButton color="error" size="small" onClick={() => handleRemoveProduct(p.id)} sx={{ bgcolor: '#FFEBEE', '&:hover': { bgcolor: '#FFCDD2' } }}><DeleteIcon fontSize="small" /></IconButton>
+                          </TableCell>
                         </TableRow>
                       ))}
                       {products.length === 0 && (
-                        <TableRow><TableCell colSpan={8} align="center">No products added. Click "+ Add Product".</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={8} align="center" sx={{ py: 4, color: 'text.secondary' }}>No products added. Click "+ Add Product".</TableCell></TableRow>
                       )}
                     </TableBody>
                   </Table>
@@ -672,21 +755,23 @@ const ProjectDetails: React.FC = () => {
                             for (const url of res.urls) {
                                await addDrawing({ projectId: id, title: 'Shop Drawing', type: 'Shop Drawing', fileUrl: url }).unwrap();
                             }
+                            refetchDrawings();
                             alert('Drawings uploaded successfully!');
                           } catch (err) {
                             console.error(err);
                             alert('Upload failed');
                           } finally {
                             setIsUploading(false);
+                            e.target.value = '';
                           }
                         }
                       }} 
                     />
                   </Box>
 
-                  {/* Camera just opening the standard file input with capture="environment" for mobile, or we could use the same startCamera logic. For now, we will just use the same file input but with capture. */}
+                  {/* Camera button using webcam dialog */}
                   <Box 
-                    component="label"
+                    onClick={isUploading ? undefined : startCamera}
                     sx={{ 
                       width: 120, height: 120, 
                       border: '2px dashed #B38B36', borderRadius: 3, 
@@ -697,32 +782,6 @@ const ProjectDetails: React.FC = () => {
                   >
                     <Typography variant="h4" color="#B38B36" sx={{ mb: 1 }}>📷</Typography>
                     <Typography variant="body2" color="#B38B36" fontWeight="bold">Camera</Typography>
-                    <input 
-                      type="file" 
-                      hidden 
-                      capture="environment"
-                      accept="image/*" 
-                      disabled={isUploading}
-                      onChange={async (e) => {
-                        if (e.target.files && e.target.files.length > 0) {
-                          setIsUploading(true);
-                          const formData = new FormData();
-                          Array.from(e.target.files).forEach(f => formData.append('files', f));
-                          try {
-                            const res = await uploadFiles(formData).unwrap();
-                            for (const url of res.urls) {
-                               await addDrawing({ projectId: id, title: 'Shop Drawing Photo', type: 'Shop Drawing', fileUrl: url }).unwrap();
-                            }
-                            alert('Photo uploaded successfully!');
-                          } catch (err) {
-                            console.error(err);
-                            alert('Upload failed');
-                          } finally {
-                            setIsUploading(false);
-                          }
-                        }
-                      }} 
-                    />
                   </Box>
                 </Box>
               </Box>
@@ -731,16 +790,39 @@ const ProjectDetails: React.FC = () => {
                 <Box sx={{ mb: 4 }}>
                   <Typography variant="h6" mb={2}>Uploaded Drawings</Typography>
                   {drawings.map((drawing: any) => (
-                    <Box key={drawing.id} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 2, border: '1px solid #EEE', borderRadius: 2, mb: 2 }}>
-                      <Box>
+                    <Box key={drawing.id} sx={{ display: 'flex', alignItems: 'center', p: 2, border: '1px solid #EEE', borderRadius: 2, mb: 2 }}>
+                      <Box 
+                        onClick={() => setPreviewFileUrl(drawing.fileUrl)}
+                        sx={{ width: 80, height: 80, borderRadius: 2, overflow: 'hidden', mr: 2, cursor: 'pointer', border: '1px solid #E0E0E0', flexShrink: 0, bgcolor: '#F9F9F9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      >
+                        {drawing.fileUrl.toLowerCase().endsWith('.pdf') ? (
+                          <Typography variant="h6" color="text.secondary">PDF</Typography>
+                        ) : (
+                          <img src={drawing.fileUrl} alt="Drawing" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        )}
+                      </Box>
+                      <Box sx={{ flex: 1 }}>
                         <Typography variant="subtitle1" fontWeight="bold">{drawing.title} (v{drawing.version})</Typography>
                         <Typography variant="body2" color="text.secondary">Status: <strong>{drawing.status}</strong> | {new Date(drawing.createdAt).toLocaleDateString()}</Typography>
-                        <a href={drawing.fileUrl} target="_blank" rel="noreferrer" style={{ color: '#1976d2', textDecoration: 'none', fontSize: 14 }}>View File</a>
+                        <Typography 
+                          onClick={() => setPreviewFileUrl(drawing.fileUrl)} 
+                          sx={{ color: '#1976d2', textDecoration: 'underline', fontSize: 14, cursor: 'pointer', mt: 0.5, display: 'inline-block' }}
+                        >
+                          View File
+                        </Typography>
                       </Box>
-                      <Box sx={{ display: 'flex', gap: 1 }}>
-                        <Button variant="outlined" color="success" size="small" onClick={() => approveDrawing({ id: drawing.id, body: { status: 'Approved', approvedBy: project.clientName, notes: '' } })}>Approve</Button>
-                        <Button variant="outlined" color="error" size="small" onClick={() => approveDrawing({ id: drawing.id, body: { status: 'Rejected', approvedBy: project.clientName, notes: 'Requires changes' } })}>Reject</Button>
-                      </Box>
+                      {drawing.status !== 'Approved' && drawing.status !== 'Rejected' && (
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          <Button variant="outlined" color="success" size="small" onClick={async () => {
+                            await approveDrawing({ id: drawing.id, body: { status: 'Approved', approvedBy: project.clientName, notes: '' } });
+                            refetchDrawings();
+                          }}>Approve</Button>
+                          <Button variant="outlined" color="error" size="small" onClick={async () => {
+                            await approveDrawing({ id: drawing.id, body: { status: 'Rejected', approvedBy: project.clientName, notes: 'Requires changes' } });
+                            refetchDrawings();
+                          }}>Reject</Button>
+                        </Box>
+                      )}
                     </Box>
                   ))}
                 </Box>
@@ -751,18 +833,146 @@ const ProjectDetails: React.FC = () => {
                   Back
                 </Button>
                 <Button variant="contained" color="success" size="large" onClick={async () => {
-                  await updateProject({ id: id as string, data: { status: 'work_order' } }).unwrap();
+                  await updateProject({ id: id as string, data: { status: 'material_planning' } }).unwrap();
                   setActiveStep(5);
                   refetch();
                 }} sx={{ px: 4, py: 1.5, borderRadius: 2, bgcolor: '#2E7D32', '&:hover': { bgcolor: '#1B5E20' } }}>
-                  Finalize Design & Start Factory Order
+                  Proceed to Material Planning
                 </Button>
               </Box>
             </Paper>
           )}
 
-          {/* STEP 5: WORK ORDER ACTIVE */}
-          {activeStep >= 5 && (
+          {/* STEP 5: MATERIAL PLANNING */}
+          {activeStep === 5 && (
+            <Paper elevation={0} sx={{ p: 5, border: '1px solid', borderColor: '#E8E1D5', borderRadius: 4, boxShadow: '0px 4px 20px rgba(0, 0, 0, 0.02)' }}>
+              <Typography variant="h5" fontWeight="bold" mb={4} color="text.primary">Material Planning & Procurement</Typography>
+              <Typography variant="body2" color="text.secondary" mb={4}>Select blocks, slabs, or other materials from inventory to reserve for this project.</Typography>
+
+              <Box sx={{ mb: 4 }}>
+                <Typography variant="h6" mb={2}>Reserved Materials</Typography>
+                <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
+                  <Table size="small">
+                    <TableHead sx={{ bgcolor: '#F5F5F5' }}>
+                      <TableRow>
+                        <TableCell><strong>Material Name</strong></TableCell>
+                        <TableCell><strong>Type</strong></TableCell>
+                        <TableCell><strong>Block No.</strong></TableCell>
+                        <TableCell><strong>Thickness</strong></TableCell>
+                        <TableCell><strong>Quantity</strong></TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {projectMaterials && projectMaterials.length > 0 ? projectMaterials.map((pm: any) => (
+                        <TableRow key={pm.id}>
+                          <TableCell>{pm.inventory.itemName}</TableCell>
+                          <TableCell>{pm.inventory.type}</TableCell>
+                          <TableCell>{pm.inventory.blockNumber || '-'}</TableCell>
+                          <TableCell>{pm.inventory.thickness ? `${pm.inventory.thickness} mm` : '-'}</TableCell>
+                          <TableCell>{pm.quantity} {pm.inventory.unit}</TableCell>
+                        </TableRow>
+                      )) : (
+                        <TableRow>
+                          <TableCell colSpan={5} align="center" sx={{ py: 3, color: 'text.secondary' }}>No materials reserved yet.</TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Box>
+
+              <Box sx={{ p: 3, border: '1px dashed #B38B36', borderRadius: 3, bgcolor: '#FFFDF5', mb: 4 }}>
+                <Typography variant="subtitle1" fontWeight="bold" color="#B38B36" mb={2}>Reserve New Material</Typography>
+                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Select from Inventory</InputLabel>
+                    <Select label="Select from Inventory" defaultValue="" value="">
+                      {inventoryItems && inventoryItems.map((item: any) => (
+                        <MenuItem key={item.id} value={item.id} onClick={() => {
+                          setSelectedInventoryItem(item);
+                          setReserveQty('');
+                          setReserveDialogOpen(true);
+                        }}>
+                          {item.itemName} (Block: {item.blockNumber || 'N/A'}) - {item.quantity} {item.unit} available
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <Button variant="outlined" sx={{ whiteSpace: 'nowrap' }} onClick={() => setSnackbarMessage('Navigate to Global Inventory (from sidebar) to add new stock first.')}>
+                    + Add to Global Inventory
+                  </Button>
+                </Box>
+              </Box>
+
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Button variant="outlined" size="large" onClick={() => handleNextStage('shop_drawing')} sx={{ px: 4, py: 1.5, borderRadius: 2 }}>
+                  Back
+                </Button>
+                <Button variant="contained" size="large" onClick={async () => {
+                  await updateProject({ id: id as string, data: { status: 'production' } }).unwrap();
+                  setActiveStep(6);
+                  refetch();
+                }} sx={{ px: 4, py: 1.5, borderRadius: 2 }}>
+                  Proceed to Production
+                </Button>
+              </Box>
+            </Paper>
+          )}
+
+          {/* STEP 6: PRODUCTION MANAGEMENT */}
+          {activeStep === 6 && (
+            <Paper elevation={0} sx={{ p: 5, border: '1px solid', borderColor: '#E8E1D5', borderRadius: 4, boxShadow: '0px 4px 20px rgba(0, 0, 0, 0.02)' }}>
+              <Typography variant="h5" fontWeight="bold" mb={4} color="text.primary">Production Management</Typography>
+              <Typography variant="body2" color="text.secondary" mb={4}>Track and update the live status of production stages.</Typography>
+
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 4 }}>
+                {['Cutting', 'CNC Carving', 'Inlay Work', 'Hand Carving', 'Polishing', 'Finishing', 'Assembly', 'Packing Preparation'].map(stage => {
+                  const log = productionLogs?.find((l: any) => l.stage === stage);
+                  const isStarted = !!log;
+                  const isCompleted = log?.status === 'completed';
+
+                  return (
+                    <Box key={stage} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 2, border: '1px solid #EEE', borderRadius: 2 }}>
+                      <Box>
+                        <Typography variant="subtitle1" fontWeight="bold">{stage}</Typography>
+                        {isStarted && <Typography variant="caption" color={isCompleted ? 'success.main' : 'warning.main'}>{isCompleted ? 'Completed' : 'In Progress'}</Typography>}
+                      </Box>
+                      <Box sx={{ display: 'flex', gap: 1 }}>
+                        {!isStarted && (
+                          <Button variant="outlined" size="small" onClick={async () => {
+                            await createProductionLog({ projectId: id, stage }).unwrap();
+                            refetchProduction();
+                          }}>Start Stage</Button>
+                        )}
+                        {isStarted && !isCompleted && (
+                          <Button variant="contained" color="success" size="small" onClick={async () => {
+                            await updateProductionLog({ id: log.id, data: { remarks: 'Done' } }).unwrap();
+                            refetchProduction();
+                          }}>Mark Complete</Button>
+                        )}
+                      </Box>
+                    </Box>
+                  );
+                })}
+              </Box>
+
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Button variant="outlined" size="large" onClick={() => handleNextStage('material_planning')} sx={{ px: 4, py: 1.5, borderRadius: 2 }}>
+                  Back
+                </Button>
+                <Button variant="contained" color="success" size="large" onClick={async () => {
+                  await updateProject({ id: id as string, data: { status: 'work_order' } }).unwrap();
+                  setActiveStep(7);
+                  refetch();
+                }} sx={{ px: 4, py: 1.5, borderRadius: 2, bgcolor: '#2E7D32', '&:hover': { bgcolor: '#1B5E20' } }}>
+                  Finalize & Send to Dispatch
+                </Button>
+              </Box>
+            </Paper>
+          )}
+
+          {/* STEP 7: WORK ORDER ACTIVE */}
+          {activeStep >= 7 && (
             <Paper elevation={0} sx={{ 
               p: 6, textAlign: 'center', 
               border: '1px solid', borderColor: '#C8E6C9', 
@@ -887,10 +1097,36 @@ const ProjectDetails: React.FC = () => {
         <DialogTitle sx={{ fontWeight: 'bold' }}>Edit Enquiry Details</DialogTitle>
         <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 3 }}>
           <TextField 
+            label="Date" 
+            type="date"
+            fullWidth 
+            value={editFormData.createdAt}
+            onChange={(e) => setEditFormData({...editFormData, createdAt: e.target.value})}
+            InputLabelProps={{ shrink: true }}
+          />
+          <TextField 
+            label="Project / Enquiry Title" 
+            fullWidth 
+            value={editFormData.name}
+            onChange={(e) => setEditFormData({...editFormData, name: e.target.value})}
+          />
+          <TextField 
+            label="Client Name" 
+            fullWidth 
+            value={editFormData.clientName}
+            onChange={(e) => setEditFormData({...editFormData, clientName: e.target.value})}
+          />
+          <TextField 
             label="Contact Number" 
             fullWidth 
             value={editFormData.clientContact}
             onChange={(e) => setEditFormData({...editFormData, clientContact: e.target.value})}
+          />
+          <TextField 
+            label="Location" 
+            fullWidth 
+            value={editFormData.location}
+            onChange={(e) => setEditFormData({...editFormData, location: e.target.value})}
           />
           <TextField 
             label="Lead Source" 
@@ -911,7 +1147,11 @@ const ProjectDetails: React.FC = () => {
           <Button onClick={() => setIsEditDialogOpen(false)} color="inherit">Cancel</Button>
           <Button variant="contained" color="primary" onClick={async () => {
             try {
-              await updateProject({ id: id as string, data: editFormData }).unwrap();
+              const dataToUpdate = {
+                ...editFormData,
+                createdAt: editFormData.createdAt ? new Date(editFormData.createdAt).toISOString() : undefined
+              };
+              await updateProject({ id: id as string, data: dataToUpdate }).unwrap();
               setIsEditDialogOpen(false);
               refetch();
             } catch (err) {
@@ -920,6 +1160,321 @@ const ProjectDetails: React.FC = () => {
           }}>Save Changes</Button>
         </Box>
       </Dialog>
+
+      {/* FILE PREVIEW DIALOG */}
+      <Dialog open={!!previewFileUrl} onClose={() => setPreviewFileUrl(null)} maxWidth="lg" fullWidth>
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 'bold' }}>
+          File Preview
+          <IconButton onClick={() => setPreviewFileUrl(null)}><CloseIcon /></IconButton>
+        </DialogTitle>
+        <DialogContent dividers sx={{ height: '80vh', p: 0, bgcolor: '#F5F5F5', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          {previewFileUrl && (
+            previewFileUrl.toLowerCase().endsWith('.pdf') ? (
+              <iframe src={previewFileUrl} title="File Preview" width="100%" height="100%" style={{ border: 'none' }} />
+            ) : (
+              <img src={previewFileUrl} alt="Preview" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+            )
+          )}
+        </DialogContent>
+      </Dialog>
+      {/* PRODUCT DIALOG */}
+      <Dialog open={isProductDialogOpen} onClose={() => setIsProductDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 'bold' }}>
+          {editingProducts.length === 1 && products.some(p => p.id === editingProducts[0].id) ? 'Edit Product' : 'Add Products'}
+        </DialogTitle>
+        <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 4, pt: 3, pb: 4 }}>
+          {editingProducts.map((ep, index) => (
+            <Box key={ep.id} sx={{ p: 3, border: '1px solid #EEEEEE', borderRadius: 2, bgcolor: '#FAFAFA', position: 'relative' }}>
+              {editingProducts.length > 1 && (
+                <IconButton 
+                  size="small" 
+                  color="error" 
+                  sx={{ position: 'absolute', top: 8, right: 8 }}
+                  onClick={() => handleRemoveRow(index)}
+                >
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              )}
+              <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+                <FormControl fullWidth size="small">
+                  <Autocomplete
+                    freeSolo
+                    selectOnFocus
+                    clearOnBlur
+                    handleHomeEndKeys
+                    options={categories}
+                    getOptionLabel={(option) => {
+                      if (typeof option === 'string') return option;
+                      if (option.inputValue) return option.inputValue;
+                      return option.name;
+                    }}
+                    filterOptions={(options, params) => {
+                      const filtered = filter(options, params);
+                      const { inputValue } = params;
+                      const isExisting = options.some((option) => inputValue === option.name);
+                      if (inputValue !== '' && !isExisting) {
+                        filtered.push({
+                          inputValue,
+                          name: `Add "${inputValue}"`,
+                          isNew: true,
+                        });
+                      }
+                      return filtered;
+                    }}
+                    value={categories.find((c: any) => c.name === ep.category) || ep.category}
+                    onChange={(e, newValue) => {
+                      if (typeof newValue === 'string') {
+                        handleUpdateEditingProduct(index, 'category', newValue);
+                      } else if (newValue && newValue.inputValue) {
+                        // User selected "Add 'xxx'"
+                        handleUpdateEditingProduct(index, 'category', newValue.inputValue);
+                        createCategory({ name: newValue.inputValue });
+                      } else if (newValue && newValue.name) {
+                        handleUpdateEditingProduct(index, 'category', newValue.name);
+                      } else {
+                        handleUpdateEditingProduct(index, 'category', '');
+                      }
+                    }}
+                    onInputChange={(e, newInputValue) => handleUpdateEditingProduct(index, 'category', newInputValue)}
+                    renderInput={(params) => <TextField {...params} label="Category / Item Name" size="small" />}
+                    renderOption={(props, option) => {
+                      if (option.isNew) {
+                        return (
+                          <li {...props} style={{ color: '#B38B36', fontWeight: 'bold' }}>
+                            {option.name}
+                          </li>
+                        );
+                      }
+                      return (
+                        <li {...props} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                          <span>{option.name}</span>
+                          <IconButton 
+                            size="small" 
+                            color="error"
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              if (window.confirm(`Are you sure you want to remove "${option.name}" from the category list?`)) {
+                                deleteCategory(option.id);
+                              }
+                            }}
+                          >
+                            <RemoveIcon fontSize="small" />
+                          </IconButton>
+                        </li>
+                      );
+                    }}
+                    fullWidth
+                  />
+                </FormControl>
+                <FormControl fullWidth size="small">
+                  <Autocomplete
+                    freeSolo
+                    selectOnFocus
+                    clearOnBlur
+                    handleHomeEndKeys
+                    options={units}
+                    getOptionLabel={(option) => {
+                      if (typeof option === 'string') return option;
+                      if (option.inputValue) return option.inputValue;
+                      return option.name;
+                    }}
+                    filterOptions={(options, params) => {
+                      const filtered = filter(options, params);
+                      const { inputValue } = params;
+                      const isExisting = options.some((option) => inputValue === option.name);
+                      if (inputValue !== '' && !isExisting) {
+                        filtered.push({
+                          inputValue,
+                          name: `Add "${inputValue}"`,
+                          isNew: true,
+                        });
+                      }
+                      return filtered;
+                    }}
+                    value={units.find((u: any) => u.name === ep.unit) || ep.unit}
+                    onChange={(e, newValue) => {
+                      if (typeof newValue === 'string') {
+                        handleUpdateEditingProduct(index, 'unit', newValue);
+                      } else if (newValue && newValue.inputValue) {
+                        handleUpdateEditingProduct(index, 'unit', newValue.inputValue);
+                        createUnit({ name: newValue.inputValue });
+                      } else if (newValue && newValue.name) {
+                        handleUpdateEditingProduct(index, 'unit', newValue.name);
+                      } else {
+                        handleUpdateEditingProduct(index, 'unit', '');
+                      }
+                    }}
+                    onInputChange={(e, newInputValue) => handleUpdateEditingProduct(index, 'unit', newInputValue)}
+                    renderInput={(params) => <TextField {...params} label="Unit" size="small" />}
+                    renderOption={(props, option) => {
+                      if (option.isNew) {
+                        return (
+                          <li {...props} style={{ color: '#B38B36', fontWeight: 'bold' }}>
+                            {option.name}
+                          </li>
+                        );
+                      }
+                      return (
+                        <li {...props} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                          <span>{option.name}</span>
+                          <IconButton 
+                            size="small" 
+                            color="error"
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              if (window.confirm(`Are you sure you want to remove "${option.name}" from the unit list?`)) {
+                                deleteUnit(option.id);
+                              }
+                            }}
+                          >
+                            <RemoveIcon fontSize="small" />
+                          </IconButton>
+                        </li>
+                      );
+                    }}
+                    fullWidth
+                  />
+                </FormControl>
+              </Box>
+
+              {ep.unit !== 'Pieces' && (
+                <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+                  <Box sx={{ flex: 1 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Length (L)</Typography>
+                    <TextField size="small" type="number" value={ep.length === 0 ? '' : ep.length} onChange={e => handleUpdateEditingProduct(index, 'length', Number(e.target.value))} fullWidth />
+                  </Box>
+                  <Box sx={{ flex: 1 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Width (W)</Typography>
+                    <TextField size="small" type="number" value={ep.width === 0 ? '' : ep.width} onChange={e => handleUpdateEditingProduct(index, 'width', Number(e.target.value))} fullWidth />
+                  </Box>
+                  <Box sx={{ flex: 1 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Breadth (B)</Typography>
+                    <TextField size="small" type="number" value={ep.breadth === 0 ? '' : ep.breadth} onChange={e => handleUpdateEditingProduct(index, 'breadth', Number(e.target.value))} fullWidth />
+                  </Box>
+                </Box>
+              )}
+
+              {ep.unit === 'Pieces' ? (
+                <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+                  <TextField 
+                    size="small" type="number" label="Quantity (Pieces)" 
+                    value={ep.qty === 0 ? '' : ep.qty} 
+                    onChange={e => handleUpdateEditingProduct(index, 'qty', Number(e.target.value))} 
+                    fullWidth 
+                  />
+                  <TextField 
+                    size="small" type="number" label="Rate (per piece)" 
+                    value={ep.rate === 0 ? '' : ep.rate} 
+                    onChange={e => handleUpdateEditingProduct(index, 'rate', Number(e.target.value))} 
+                    fullWidth 
+                    InputProps={{ startAdornment: <Typography variant="body2" color="text.secondary" sx={{mr: 0.5}}>₹</Typography> } as any}
+                  />
+                </Box>
+              ) : (
+                <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+                  <TextField 
+                    size="small" type="number" label={`Total ${ep.unit || ''}`} 
+                    value={(ep.length || 0) * (ep.width || 0) * (ep.breadth || 1)} 
+                    disabled 
+                    fullWidth 
+                    sx={{ bgcolor: '#f5f5f5' }}
+                  />
+                  <TextField 
+                    size="small" type="number" label="Rate (per unit)" 
+                    value={ep.rate === 0 ? '' : ep.rate} 
+                    onChange={e => handleUpdateEditingProduct(index, 'rate', Number(e.target.value))} 
+                    fullWidth 
+                    InputProps={{ startAdornment: <Typography variant="body2" color="text.secondary" sx={{mr: 0.5}}>₹</Typography> } as any}
+                  />
+                  <TextField 
+                    size="small" type="number" label="No. of Pieces" 
+                    value={ep.qty === 0 ? '' : ep.qty} 
+                    onChange={e => handleUpdateEditingProduct(index, 'qty', Number(e.target.value))} 
+                    fullWidth 
+                  />
+                </Box>
+              )}
+
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+                <Typography variant="body2" color="text.secondary" sx={{ mr: 1 }}>Item Amount:</Typography>
+                <Typography variant="subtitle1" color="#B38B36" sx={{ fontWeight: 'bold' }}>₹{ep.amount.toLocaleString('en-IN')}</Typography>
+              </Box>
+            </Box>
+          ))}
+          
+          <Button variant="outlined" sx={{ borderStyle: 'dashed', borderWidth: 2, py: 1.5 }} onClick={handleAddNewRow}>
+            + Add Another Item
+          </Button>
+
+          <Box sx={{ p: 2, mt: 1, bgcolor: '#FFFDF5', border: '1px solid #E8E1D5', borderRadius: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6" color="text.secondary">Grand Total</Typography>
+            <Typography variant="h4" color="#B38B36" sx={{ fontWeight: 'bold' }}>
+              ₹{editingProducts.reduce((sum, p) => sum + p.amount, 0).toLocaleString('en-IN')}
+            </Typography>
+          </Box>
+        </DialogContent>
+        <Box sx={{ p: 2, display: 'flex', justifyContent: 'flex-end', gap: 2, bgcolor: '#FAFAFA' }}>
+          <Button onClick={() => setIsProductDialogOpen(false)} color="inherit">Cancel</Button>
+          <Button variant="contained" onClick={handleSaveProducts} sx={{ px: 4 }}>Save Products</Button>
+        </Box>
+      </Dialog>
+
+      {/* RESERVE MATERIAL DIALOG */}
+      <Dialog open={reserveDialogOpen} onClose={() => setReserveDialogOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 'bold' }}>Reserve Material</DialogTitle>
+        <DialogContent dividers>
+          {selectedInventoryItem && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+              <Typography variant="body2" color="text.secondary">
+                Selected: <strong>{selectedInventoryItem.itemName}</strong> (Block: {selectedInventoryItem.blockNumber || 'N/A'})
+              </Typography>
+              <Typography variant="body2" color="text.secondary" mb={1}>
+                Available Stock: <strong>{selectedInventoryItem.quantity} {selectedInventoryItem.unit}</strong>
+              </Typography>
+              <TextField 
+                label={`Quantity to Reserve (${selectedInventoryItem.unit})`} 
+                type="number" 
+                fullWidth 
+                value={reserveQty}
+                onChange={(e) => setReserveQty(e.target.value)}
+                autoFocus
+              />
+            </Box>
+          )}
+        </DialogContent>
+        <Box sx={{ p: 2, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+          <Button onClick={() => setReserveDialogOpen(false)} color="inherit">Cancel</Button>
+          <Button variant="contained" color="primary" onClick={() => {
+            if (reserveQty && !isNaN(Number(reserveQty))) {
+              reserveMaterial({ 
+                projectId: id as string, 
+                data: { 
+                  inventoryId: selectedInventoryItem.id, 
+                  quantity: Number(reserveQty), 
+                  cost: selectedInventoryItem.costPerUnit * Number(reserveQty) 
+                } 
+              }).unwrap().then(() => {
+                refetchMaterials();
+                setReserveDialogOpen(false);
+                setSnackbarMessage('Material reserved successfully!');
+              }).catch(() => {
+                setSnackbarMessage('Failed to reserve material. Not enough stock?');
+                setReserveDialogOpen(false);
+              });
+            }
+          }}>Confirm Reserve</Button>
+        </Box>
+      </Dialog>
+
+      <Snackbar
+        open={!!snackbarMessage}
+        autoHideDuration={4000}
+        onClose={() => setSnackbarMessage('')}
+        message={snackbarMessage}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      />
     </Box>
   );
 };

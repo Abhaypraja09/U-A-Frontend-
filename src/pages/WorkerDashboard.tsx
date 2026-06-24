@@ -12,7 +12,6 @@ const WorkerDashboard: React.FC = () => {
   const [punchOut, { isLoading: punchingOut }] = usePunchOutMutation();
   
   const [selectedMachine, setSelectedMachine] = useState('');
-  const [photoUrl, setPhotoUrl] = useState(''); // Mock for now
   
   const dispatch = useDispatch();
   const navigate = useNavigate();
@@ -41,22 +40,22 @@ const WorkerDashboard: React.FC = () => {
     navigate('/login');
   };
 
-  if (sessionLoading || machinesLoading) return <Box p={4} textAlign="center"><CircularProgress /></Box>;
+  if (sessionLoading || machinesLoading) return <Box sx={{ p: 4, textAlign: 'center' }}><CircularProgress /></Box>;
 
   return (
     <Box sx={{ p: 3, maxWidth: 600, mx: 'auto', mt: 4 }}>
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 4 }}>
-        <Typography variant="h5" fontWeight="bold">Worker Portal</Typography>
+        <Typography variant="h5" sx={{ fontWeight: 'bold' }}>Worker Portal</Typography>
         <Button variant="outlined" color="error" onClick={handleLogout}>Logout</Button>
       </Box>
 
       {activeSession ? (
         <Paper elevation={3} sx={{ p: 4, textAlign: 'center', bgcolor: 'success.light', color: 'white' }}>
-          <Typography variant="h4" mb={2}>Currently Punched In</Typography>
-          <Typography variant="body1" mb={1}>
+          <Typography variant="h4" sx={{ mb: 2 }}>Currently Punched In</Typography>
+          <Typography variant="body1" sx={{ mb: 1 }}>
             Machine: {activeSession.machine?.name || 'N/A'}
           </Typography>
-          <Typography variant="body2" mb={4}>
+          <Typography variant="body2" sx={{ mb: 4 }}>
             Started at: {new Date(activeSession.checkIn).toLocaleTimeString()}
           </Typography>
           
@@ -73,7 +72,7 @@ const WorkerDashboard: React.FC = () => {
         </Paper>
       ) : (
         <Paper elevation={3} sx={{ p: 4 }}>
-          <Typography variant="h5" mb={3} textAlign="center">Start Your Shift</Typography>
+          <Typography variant="h5" sx={{ mb: 3, textAlign: 'center' }}>Start Your Shift</Typography>
           
           <TextField 
             select

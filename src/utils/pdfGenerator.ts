@@ -68,7 +68,7 @@ export const generateWorkOrderPDF = (project: any, advanceAmount: number) => {
   doc.setFontSize(12);
   doc.setTextColor(0, 0, 0);
   doc.text(`Date Issued: ${new Date().toLocaleDateString('en-GB')}`, 20, 45);
-  doc.text(`Work Order Ref: WO-${project.projectId}`, 140, 45);
+  doc.text(`Work Order Ref: WO-${project.projectId.replace('PRJ-', '')}`, 140, 45);
 
   doc.text(`Client Name: ${project.clientName || 'N/A'}`, 20, 60);
   doc.text(`Project Name: ${project.name}`, 20, 70);
@@ -78,7 +78,7 @@ export const generateWorkOrderPDF = (project: any, advanceAmount: number) => {
     startY: 95,
     head: [['Task', 'Status']],
     body: [
-      ['Shop Drawings & Design Approval', 'Pending'],
+      ['Shop Drawings & Design Approval', 'Completed'],
       ['Material Procurement', 'Pending'],
       ['Production & Carving', 'Pending'],
       ['QA & Dispatch', 'Pending']

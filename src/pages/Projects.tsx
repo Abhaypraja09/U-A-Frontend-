@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Box, Typography, Button, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, Dialog, DialogTitle, DialogContent, DialogActions, TextField } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import { useGetProjectsQuery, useCreateProjectMutation } from '../store/apiSlice';
 
 const Projects: React.FC = () => {
+  const navigate = useNavigate();
   const { data: projects, isLoading } = useGetProjectsQuery();
   const [createProject] = useCreateProjectMutation();
   const [open, setOpen] = useState(false);
@@ -23,7 +25,7 @@ const Projects: React.FC = () => {
   };
 
   // Only show active or completed work orders
-  const workOrders = projects?.filter((p: any) => p.status === 'work_order' || p.status === 'completed') || [];
+  const workOrders = projects?.filter((p: any) => ['material_planning', 'production', 'work_order', 'completed'].includes(p.status)) || [];
 
   return (
     <Box>
@@ -53,7 +55,7 @@ const Projects: React.FC = () => {
               <TableRow><TableCell colSpan={6} align="center">No active work orders found.</TableCell></TableRow>
             ) : (
               workOrders?.map((project: any) => (
-                <TableRow key={project.id} hover sx={{ cursor: 'pointer' }}>
+                <TableRow key={project.id} hover sx={{ cursor: 'pointer' }} onClick={() => navigate(`/projects/${project.id}`)}>
                   <TableCell>
                     <Typography sx={{ fontWeight: 'bold', color: 'primary.main' }}>{project.projectId}</Typography>
                   </TableCell>

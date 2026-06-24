@@ -24,7 +24,7 @@ const baseQueryWithReauth: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQue
 export const apiSlice = createApi({
   reducerPath: 'api',
   baseQuery: baseQueryWithReauth,
-  tagTypes: ['User', 'Project', 'Lead', 'Invoice', 'Inventory', 'Production', 'Dispatch', 'Attendance', 'Drawing'],
+  tagTypes: ['User', 'Project', 'Lead', 'Invoice', 'Inventory', 'Production', 'Dispatch', 'Attendance', 'Drawing', 'Category', 'Unit'],
   endpoints: (builder) => ({
     getLeads: builder.query<any[], void>({
       query: () => '/leads',
@@ -60,15 +60,15 @@ export const apiSlice = createApi({
     }),
     getDrawings: builder.query<any[], string>({
       query: (projectId) => `/drawings/${projectId}`,
-      providesTags: (result, error, id) => [{ type: 'Drawing', id }],
+      providesTags: (_result, _error, id) => [{ type: 'Drawing', id }],
     }),
     addDrawing: builder.mutation<any, Partial<any>>({
       query: (body) => ({ url: '/drawings', method: 'POST', body }),
-      invalidatesTags: (result, error, { projectId }) => [{ type: 'Drawing', id: projectId }],
+      invalidatesTags: (_result, _error, { projectId }) => [{ type: 'Drawing', id: projectId }],
     }),
     approveDrawing: builder.mutation<any, { id: string, body: Partial<any> }>({
       query: ({ id, body }) => ({ url: `/drawings/${id}/approve`, method: 'POST', body }),
-      invalidatesTags: (result, error, { body }) => [{ type: 'Drawing', id: body.projectId }],
+      invalidatesTags: (_result, _error, { body }) => [{ type: 'Drawing', id: body.projectId }],
     }),
     uploadFiles: builder.mutation<{ success: boolean; urls: string[] }, FormData>({
       query: (body) => ({
@@ -120,6 +120,46 @@ export const apiSlice = createApi({
       providesTags: ['Attendance'],
     }),
 
+    getCategories: builder.query<any[], void>({
+      query: () => '/categories',
+      providesTags: ['Category']
+    }),
+    createCategory: builder.mutation<any, { name: string }>({
+      query: (body) => ({
+        url: '/categories',
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: ['Category']
+    }),
+    deleteCategory: builder.mutation<any, string>({
+      query: (id) => ({
+        url: `/categories/${id}`,
+        method: 'DELETE'
+      }),
+      invalidatesTags: ['Category']
+    }),
+
+    getUnits: builder.query<any[], void>({
+      query: () => '/units',
+      providesTags: ['Unit']
+    }),
+    createUnit: builder.mutation<any, { name: string }>({
+      query: (body) => ({
+        url: '/units',
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: ['Unit']
+    }),
+    deleteUnit: builder.mutation<any, string>({
+      query: (id) => ({
+        url: `/units/${id}`,
+        method: 'DELETE'
+      }),
+      invalidatesTags: ['Unit']
+    }),
+
     addMachine: builder.mutation<any, Partial<any>>({
       query: (body) => ({
         url: '/machines',
@@ -146,6 +186,10 @@ export const apiSlice = createApi({
     createProductionLog: builder.mutation<any, Partial<any>>({
       query: (body) => ({ url: '/production', method: 'POST', body }),
       invalidatesTags: ['Production']
+    }),
+    getProjectProductionLogs: builder.query<any[], string>({
+      query: (projectId) => `/production/project/${projectId}`,
+      providesTags: ['Production']
     }),
     getDispatches: builder.query<any[], void>({
       query: () => '/dispatch',
@@ -174,6 +218,28 @@ export const apiSlice = createApi({
         body: data,
       }),
       invalidatesTags: ['Project']
+    }),
+    deleteProject: builder.mutation<any, string>({
+      query: (id) => ({
+        url: `/projects/${id}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: ['Project']
+    }),
+    getProjectMaterials: builder.query<any[], string>({
+      query: (projectId) => `/projects/${projectId}/materials`,
+      providesTags: (_result, _error, id) => [{ type: 'Project', id: `${id}_MATERIALS` }]
+    }),
+    reserveProjectMaterial: builder.mutation<any, { projectId: string; data: any }>({
+      query: ({ projectId, data }) => ({
+        url: `/projects/${projectId}/materials`,
+        method: 'POST',
+        body: data
+      }),
+      invalidatesTags: (_result, _error, { projectId }) => [
+        { type: 'Project', id: `${projectId}_MATERIALS` },
+        'Inventory'
+      ]
     }),
     createQuotation: builder.mutation<any, Partial<any>>({
       query: (body) => ({
@@ -215,8 +281,18 @@ export const {
   useCreateDispatchMutation,
   useGetAttendanceQuery,
   useGetStaffSalaryQuery,
+  useGetCategoriesQuery,
+  useCreateCategoryMutation,
+  useDeleteCategoryMutation,
+  useGetUnitsQuery,
+  useCreateUnitMutation,
+  useDeleteUnitMutation,
   useGetDashboardSummaryQuery,
   useGetProjectByIdQuery,
   useUpdateProjectMutation,
-  useCreateQuotationMutation
+  useGetProjectMaterialsQuery,
+  useReserveProjectMaterialMutation,
+  useCreateQuotationMutation,
+  useGetProjectProductionLogsQuery,
+  useDeleteProjectMutation
 } = apiSlice;

@@ -3,13 +3,22 @@ import { useNavigate } from 'react-router-dom';
 import { Box, Typography, Button, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, Select, FormControl, InputLabel, Autocomplete } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import FilterListIcon from '@mui/icons-material/FilterList';
-import { useGetProjectsQuery, useCreateProjectMutation } from '../store/apiSlice';
+import CampaignIcon from '@mui/icons-material/Campaign';
+import LayersIcon from '@mui/icons-material/Layers';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
+import { IconButton } from '@mui/material';
+import { useGetProjectsQuery, useCreateProjectMutation, useUpdateProjectMutation, useDeleteProjectMutation } from '../store/apiSlice';
 
 const CRM: React.FC = () => {
   const navigate = useNavigate();
   const { data: projects, isLoading } = useGetProjectsQuery();
   const [createProject] = useCreateProjectMutation();
+  const [updateProject] = useUpdateProjectMutation();
+  const [deleteProject] = useDeleteProjectMutation();
   const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   
   // Filter States
   const [selectedFY, setSelectedFY] = useState('FY 2026-27');
@@ -24,22 +33,52 @@ const CRM: React.FC = () => {
     enquirySource: 'Website', 
     location: '',
     requirements: '',
-    status: 'enquiry' 
+    status: 'enquiry',
+    createdAt: new Date().toISOString().split('T')[0]
   });
 
-  const handleOpen = () => setOpen(true);
+  const handleOpen = () => {
+    setEditingId(null);
+    setFormData({ name: '', clientName: '', clientContact: '', enquirySource: 'Website', location: '', requirements: '', status: 'enquiry', createdAt: new Date().toISOString().split('T')[0] });
+    setOpen(true);
+  };
+  const handleOpenEdit = (enq: any) => {
+    setEditingId(enq.id);
+    setFormData({
+      name: enq.name,
+      clientName: enq.clientName,
+      clientContact: enq.clientContact,
+      enquirySource: enq.enquirySource,
+      location: enq.location || '',
+      requirements: enq.description || '',
+      status: enq.status,
+      createdAt: new Date(enq.createdAt).toISOString().split('T')[0]
+    });
+    setOpen(true);
+  };
   const handleClose = () => setOpen(false);
 
   const handleSubmit = async () => {
     try {
-      await createProject({
-        ...formData,
-        description: formData.requirements
-      }).unwrap();
+      if (editingId) {
+        await updateProject({ id: editingId, data: { ...formData, description: formData.requirements, createdAt: new Date(formData.createdAt).toISOString() } }).unwrap();
+      } else {
+        await createProject({ ...formData, description: formData.requirements, createdAt: new Date(formData.createdAt).toISOString() }).unwrap();
+      }
       handleClose();
-      setFormData({ name: '', clientName: '', clientContact: '', enquirySource: 'Website', location: '', requirements: '', status: 'enquiry' });
+      setFormData({ name: '', clientName: '', clientContact: '', enquirySource: 'Website', location: '', requirements: '', status: 'enquiry', createdAt: new Date().toISOString().split('T')[0] });
     } catch (err) {
-      console.error('Failed to create enquiry', err);
+      console.error('Failed to save enquiry', err);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (window.confirm("Are you sure you want to delete this project? This will permanently delete all related documents and logs.")) {
+      try {
+        await deleteProject(id).unwrap();
+      } catch (err) {
+        console.error('Failed to delete project', err);
+      }
     }
   };
 
@@ -52,7 +91,7 @@ const CRM: React.FC = () => {
   };
 
   // Filter logic
-  let enquiries = projects?.filter((p: any) => p.status !== 'work_order' && p.status !== 'completed') || [];
+  let enquiries = projects?.filter((p: any) => !['material_planning', 'production', 'work_order', 'completed'].includes(p.status)) || [];
   
   if (selectedMonth !== 'All') {
     enquiries = enquiries.filter((p: any) => {
@@ -83,66 +122,115 @@ const CRM: React.FC = () => {
         <FilterListIcon sx={{ color: 'text.secondary', mr: 1 }} />
         <Typography variant="body2" fontWeight="bold" color="text.secondary">Filters:</Typography>
         
-        <FormControl size="small" sx={{ minWidth: 150 }}>
-          <InputLabel>Financial Year</InputLabel>
-          <Select 
-            value={selectedFY} 
-            label="Financial Year" 
-            onChange={(e) => setSelectedFY(e.target.value)}
-            sx={{ bgcolor: '#FFF' }}
-          >
-            <MenuItem value="FY 2025-26">FY 2025-26</MenuItem>
-            <MenuItem value="FY 2026-27">FY 2026-27</MenuItem>
-          </Select>
-        </FormControl>
-
-        <FormControl size="small" sx={{ minWidth: 150 }}>
-          <InputLabel>Month</InputLabel>
-          <Select 
-            value={selectedMonth} 
-            label="Month" 
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            sx={{ bgcolor: '#FFF' }}
-          >
-            <MenuItem value="All">All Months</MenuItem>
-            <MenuItem value="January">January</MenuItem>
-            <MenuItem value="February">February</MenuItem>
-            <MenuItem value="March">March</MenuItem>
-            <MenuItem value="April">April</MenuItem>
-            <MenuItem value="May">May</MenuItem>
-            <MenuItem value="June">June</MenuItem>
-            <MenuItem value="July">July</MenuItem>
-            <MenuItem value="August">August</MenuItem>
-            <MenuItem value="September">September</MenuItem>
-            <MenuItem value="October">October</MenuItem>
-            <MenuItem value="November">November</MenuItem>
-            <MenuItem value="December">December</MenuItem>
-          </Select>
-        </FormControl>
-
-        <Autocomplete
-          size="small"
-          options={['All', 'WhatsApp', 'Website', 'Call', 'Architect', 'Interior Designer', 'Reference']}
+        {/* Source Filter */}
+        <Select
           value={selectedSource}
-          onChange={(_e, newValue) => setSelectedSource(newValue || 'All')}
-          renderInput={(params) => <TextField {...params} label="Source" sx={{ width: 180, bgcolor: '#FFF' }} />}
-        />
+          onChange={(e) => setSelectedSource(e.target.value as string)}
+          displayEmpty
+          IconComponent={KeyboardArrowDownIcon}
+          sx={{
+            bgcolor: '#FFF',
+            borderRadius: 3,
+            border: '1px solid #E8E1D5',
+            minWidth: 200,
+            '& .MuiSelect-select': { display: 'flex', alignItems: 'center', p: 1, pr: 4 },
+            '& fieldset': { border: 'none' },
+          }}
+          renderValue={(value) => (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Box sx={{ p: 1, bgcolor: '#FFF4E5', borderRadius: 2, display: 'flex', color: '#B38B36' }}>
+                <CampaignIcon fontSize="small" />
+              </Box>
+              <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold', fontSize: '0.65rem', textTransform: 'uppercase', lineHeight: 1 }}>Source Filter</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 'bold', lineHeight: 1.2, mt: 0.5 }}>
+                  {value === 'All' ? 'All Sources' : value as string}
+                </Typography>
+              </Box>
+            </Box>
+          )}
+        >
+          {['All', 'WhatsApp', 'Website', 'Call', 'Architect', 'Interior Designer', 'Reference'].map((src) => (
+            <MenuItem key={src} value={src}>{src === 'All' ? 'All Sources' : src}</MenuItem>
+          ))}
+        </Select>
 
-        <FormControl size="small" sx={{ minWidth: 180 }}>
-          <InputLabel>Current Stage</InputLabel>
-          <Select 
-            value={selectedStage} 
-            label="Current Stage" 
-            onChange={(e) => setSelectedStage(e.target.value)}
-            sx={{ bgcolor: '#FFF' }}
-          >
-            <MenuItem value="All">All Stages</MenuItem>
-            <MenuItem value="enquiry">Enquiry (Pending)</MenuItem>
-            <MenuItem value="design_sharing">Enquiry Details</MenuItem>
-            <MenuItem value="quotation">Quotation Sharing</MenuItem>
-            <MenuItem value="advance_payment">Quotation & Costing</MenuItem>
-          </Select>
-        </FormControl>
+        {/* Current Stage Filter */}
+        <Select
+          value={selectedStage}
+          onChange={(e) => setSelectedStage(e.target.value as string)}
+          displayEmpty
+          IconComponent={KeyboardArrowDownIcon}
+          sx={{
+            bgcolor: '#FFF',
+            borderRadius: 3,
+            border: '1px solid #E8E1D5',
+            minWidth: 200,
+            '& .MuiSelect-select': { display: 'flex', alignItems: 'center', p: 1, pr: 4 },
+            '& fieldset': { border: 'none' },
+          }}
+          renderValue={(value) => (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Box sx={{ p: 1, bgcolor: '#FFF4E5', borderRadius: 2, display: 'flex', color: '#B38B36' }}>
+                <LayersIcon fontSize="small" />
+              </Box>
+              <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold', fontSize: '0.65rem', textTransform: 'uppercase', lineHeight: 1 }}>Category Filter</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 'bold', lineHeight: 1.2, mt: 0.5 }}>
+                  {value === 'All' ? 'All Stages' : stageNames[value as string] || (value as string)}
+                </Typography>
+              </Box>
+            </Box>
+          )}
+        >
+          <MenuItem value="All">All Stages</MenuItem>
+          <MenuItem value="enquiry">Enquiry (Pending)</MenuItem>
+          <MenuItem value="design_sharing">Enquiry Details</MenuItem>
+          <MenuItem value="quotation">Quotation Sharing</MenuItem>
+          <MenuItem value="advance_payment">Quotation & Costing</MenuItem>
+        </Select>
+
+        <Box sx={{ flexGrow: 1 }} />
+
+        {/* Date Filters Right Aligned */}
+        <Select 
+          size="small"
+          value={selectedMonth} 
+          onChange={(e) => setSelectedMonth(e.target.value as string)}
+          sx={{ bgcolor: '#FFF', borderRadius: 2, fontWeight: 'bold', minWidth: 120, '& fieldset': { borderColor: '#E8E1D5' } }}
+          IconComponent={KeyboardArrowDownIcon}
+        >
+          <MenuItem value="All">All Months</MenuItem>
+          <MenuItem value="January">January</MenuItem>
+          <MenuItem value="February">February</MenuItem>
+          <MenuItem value="March">March</MenuItem>
+          <MenuItem value="April">April</MenuItem>
+          <MenuItem value="May">May</MenuItem>
+          <MenuItem value="June">June</MenuItem>
+          <MenuItem value="July">July</MenuItem>
+          <MenuItem value="August">August</MenuItem>
+          <MenuItem value="September">September</MenuItem>
+          <MenuItem value="October">October</MenuItem>
+          <MenuItem value="November">November</MenuItem>
+          <MenuItem value="December">December</MenuItem>
+        </Select>
+
+        <Select 
+          size="small"
+          value={selectedFY} 
+          onChange={(e) => setSelectedFY(e.target.value as string)}
+          sx={{ bgcolor: '#FFF', borderRadius: 2, fontWeight: 'bold', minWidth: 130, '& fieldset': { borderColor: '#E8E1D5' } }}
+          IconComponent={KeyboardArrowDownIcon}
+          renderValue={(value) => (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 'bold' }}>FY</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{(value as string).replace('FY ', '')}</Typography>
+            </Box>
+          )}
+        >
+          <MenuItem value="FY 2025-26">FY 2025-26</MenuItem>
+          <MenuItem value="FY 2026-27">FY 2026-27</MenuItem>
+        </Select>
       </Box>
 
       <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 4 }}>
@@ -155,13 +243,14 @@ const CRM: React.FC = () => {
               <TableCell><strong>Source</strong></TableCell>
               <TableCell><strong>Current Stage</strong></TableCell>
               <TableCell><strong>Date</strong></TableCell>
+              <TableCell align="right"><strong>Actions</strong></TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={6} align="center">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} align="center">Loading...</TableCell></TableRow>
             ) : enquiries?.length === 0 ? (
-              <TableRow><TableCell colSpan={6} align="center">No active enquiries in pipeline.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} align="center">No active enquiries in pipeline.</TableCell></TableRow>
             ) : (
               enquiries?.map((enq: any) => (
                 <TableRow key={enq.id} hover sx={{ cursor: 'pointer' }} onClick={() => navigate(`/crm/${enq.id}`)}>
@@ -185,6 +274,14 @@ const CRM: React.FC = () => {
                     />
                   </TableCell>
                   <TableCell>{new Date(enq.createdAt).toLocaleDateString('en-GB')}</TableCell>
+                  <TableCell align="right" onClick={(e) => e.stopPropagation()}>
+                    <IconButton color="primary" onClick={() => handleOpenEdit(enq)} size="small" sx={{ mr: 1 }}>
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton color="error" onClick={() => handleDelete(enq.id)} size="small">
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </TableCell>
                 </TableRow>
               ))
             )}
@@ -192,9 +289,9 @@ const CRM: React.FC = () => {
         </Table>
       </TableContainer>
 
-      {/* Add Enquiry Dialog */}
+      {/* Add/Edit Enquiry Dialog */}
       <Dialog open={open} onClose={handleClose} fullWidth maxWidth="sm">
-        <DialogTitle sx={{ fontWeight: 'bold' }}>Create New Enquiry</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 'bold' }}>{editingId ? 'Edit Enquiry' : 'Create New Enquiry'}</DialogTitle>
         <DialogContent dividers>
           <Box component="form" sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <TextField 
@@ -241,6 +338,14 @@ const CRM: React.FC = () => {
               rows={3}
               value={formData.requirements} 
               onChange={(e) => setFormData({...formData, requirements: e.target.value})} 
+            />
+            <TextField 
+              label="Date" 
+              type="date"
+              fullWidth 
+              value={formData.createdAt} 
+              onChange={(e) => setFormData({...formData, createdAt: e.target.value})}
+              InputLabelProps={{ shrink: true }}
             />
           </Box>
         </DialogContent>
