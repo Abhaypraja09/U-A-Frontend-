@@ -70,6 +70,14 @@ export const apiSlice = createApi({
       query: ({ id, body }) => ({ url: `/drawings/${id}/approve`, method: 'POST', body }),
       invalidatesTags: (_result, _error, { body }) => [{ type: 'Drawing', id: body.projectId }],
     }),
+    deleteDrawing: builder.mutation<any, { id: string; projectId: string }>({
+      query: ({ id }) => ({ url: `/drawings/${id}`, method: 'DELETE' }),
+      invalidatesTags: (_result, _error, { projectId }) => [{ type: 'Drawing', id: projectId }]
+    }),
+    updateDrawing: builder.mutation<any, { id: string; projectId: string; body: { title: string; comments?: string } }>({
+      query: ({ id, body }) => ({ url: `/drawings/${id}`, method: 'PATCH', body }),
+      invalidatesTags: (_result, _error, { projectId }) => [{ type: 'Drawing', id: projectId }]
+    }),
     uploadFiles: builder.mutation<{ success: boolean; urls: string[] }, FormData>({
       query: (body) => ({
         url: '/upload',
@@ -262,6 +270,8 @@ export const {
   useGetDrawingsQuery,
   useAddDrawingMutation,
   useApproveDrawingMutation,
+  useDeleteDrawingMutation,
+  useUpdateDrawingMutation,
   useUploadFilesMutation,
   useGetInventoryQuery,
   useCreateInventoryMutation,

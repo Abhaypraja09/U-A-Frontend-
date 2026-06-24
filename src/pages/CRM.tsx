@@ -8,8 +8,9 @@ import LayersIcon from '@mui/icons-material/Layers';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import CloseIcon from '@mui/icons-material/Close';
 import { IconButton } from '@mui/material';
-import { useGetProjectsQuery, useCreateProjectMutation, useUpdateProjectMutation, useDeleteProjectMutation } from '../store/apiSlice';
+import { useGetProjectsQuery, useCreateProjectMutation, useUpdateProjectMutation, useDeleteProjectMutation, useUploadFilesMutation } from '../store/apiSlice';
 
 const CRM: React.FC = () => {
   const navigate = useNavigate();
@@ -17,6 +18,7 @@ const CRM: React.FC = () => {
   const [createProject] = useCreateProjectMutation();
   const [updateProject] = useUpdateProjectMutation();
   const [deleteProject] = useDeleteProjectMutation();
+  const [uploadFiles, { isLoading: isUploading }] = useUploadFilesMutation();
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
@@ -34,12 +36,13 @@ const CRM: React.FC = () => {
     location: '',
     requirements: '',
     status: 'enquiry',
-    createdAt: new Date().toISOString().split('T')[0]
+    createdAt: new Date().toISOString().split('T')[0],
+    customerPhoto: ''
   });
 
   const handleOpen = () => {
     setEditingId(null);
-    setFormData({ name: '', clientName: '', clientContact: '', enquirySource: 'Website', location: '', requirements: '', status: 'enquiry', createdAt: new Date().toISOString().split('T')[0] });
+    setFormData({ name: '', clientName: '', clientContact: '', enquirySource: 'Website', location: '', requirements: '', status: 'enquiry', createdAt: new Date().toISOString().split('T')[0], customerPhoto: '' });
     setOpen(true);
   };
   const handleOpenEdit = (enq: any) => {
@@ -52,7 +55,8 @@ const CRM: React.FC = () => {
       location: enq.location || '',
       requirements: enq.description || '',
       status: enq.status,
-      createdAt: new Date(enq.createdAt).toISOString().split('T')[0]
+      createdAt: new Date(enq.createdAt).toISOString().split('T')[0],
+      customerPhoto: enq.customerPhoto || ''
     });
     setOpen(true);
   };
@@ -347,6 +351,54 @@ const CRM: React.FC = () => {
               onChange={(e) => setFormData({...formData, createdAt: e.target.value})}
               InputLabelProps={{ shrink: true }}
             />
+            <Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontWeight: 'bold' }}>Client Photo</Typography>
+              <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                {formData.customerPhoto ? (
+                  <Box sx={{ position: 'relative', width: 80, height: 80, border: '1px solid #CCC', borderRadius: 2, overflow: 'hidden' }}>
+                    <img src={formData.customerPhoto} alt="Client Photo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <IconButton 
+                      size="small" 
+                      onClick={() => setFormData({ ...formData, customerPhoto: '' })}
+                      sx={{ position: 'absolute', top: 2, right: 2, bgcolor: 'rgba(255, 255, 255, 0.7)', '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.9)' } }}
+                    >
+                      <CloseIcon fontSize="small" sx={{ color: 'error.main' }} />
+                    </IconButton>
+                  </Box>
+                ) : (
+                  <Button
+                    variant="outlined"
+                    component="label"
+                    sx={{ height: 80, width: 80, borderStyle: 'dashed', borderRadius: 2, display: 'flex', flexDirection: 'column', fontSize: '0.75rem', color: 'text.secondary', justifyContent: 'center', alignItems: 'center' }}
+                  >
+                    {isUploading ? 'Uploading...' : '+ Upload'}
+                    <input
+                      type="file"
+                      hidden
+                      accept="image/*"
+                      onChange={async (e) => {
+                        if (e.target.files && e.target.files.length > 0) {
+                          const file = e.target.files[0];
+                          const uploadData = new FormData();
+                          uploadData.append('files', file);
+                          try {
+                            const res = await uploadFiles(uploadData).unwrap();
+                            if (res.success && res.urls.length > 0) {
+                              setFormData({ ...formData, customerPhoto: res.urls[0] });
+                            }
+                          } catch (err) {
+                            console.error('Failed to upload client photo', err);
+                          }
+                        }
+                      }}
+                    />
+                  </Button>
+                )}
+                {formData.customerPhoto && (
+                  <Typography variant="caption" color="success.main" sx={{ fontWeight: 'bold' }}>Photo Uploaded Successfully</Typography>
+                )}
+              </Box>
+            </Box>
           </Box>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
