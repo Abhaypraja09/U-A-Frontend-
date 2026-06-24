@@ -80,7 +80,14 @@ const ProjectDetails: React.FC = () => {
     rate: number;
     amount: number;
   };
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<Product[]>(() => {
+    const saved = localStorage.getItem(`quoteProducts_${id}`);
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  React.useEffect(() => {
+    localStorage.setItem(`quoteProducts_${id}`, JSON.stringify(products));
+  }, [products, id]);
 
   const [quoteDetails, setQuoteDetails] = useState(() => {
     const saved = localStorage.getItem(`quoteDraft_${id}`);
@@ -143,8 +150,40 @@ const ProjectDetails: React.FC = () => {
       if (project.invoices && project.invoices.length > 0) {
         setAdvancePayment(project.invoices[0].advancePaid || 0);
       }
+
+      // Load saved quotation from database if project is past the quotation stage,
+      // OR if no local draft exists (or draft is empty).
+      if (project.quotations && project.quotations.length > 0) {
+        const latestQuote = project.quotations[0];
+        const isPastQuotation = getStepIndex(project.status) > 2;
+
+        const savedProductsStr = localStorage.getItem(`quoteProducts_${id}`);
+        const savedProducts = savedProductsStr ? JSON.parse(savedProductsStr) : [];
+
+        const savedDraftStr = localStorage.getItem(`quoteDraft_${id}`);
+        const savedDraft = savedDraftStr ? JSON.parse(savedDraftStr) : null;
+
+        if (isPastQuotation || savedProducts.length === 0) {
+          if (latestQuote.products) {
+            setProducts(latestQuote.products as any);
+          }
+        }
+
+        if (isPastQuotation || !savedDraft) {
+          setQuoteDetails({
+            materialCost: latestQuote.materialCost || 0,
+            cncCost: latestQuote.cncCost || 0,
+            handCarvingCost: latestQuote.handCarvingCost || 0,
+            inlayCost: latestQuote.inlayCost || 0,
+            polishingCost: latestQuote.polishingCost || 0,
+            packingCost: latestQuote.packingCost || 0,
+            transportCost: latestQuote.transportCost || 0,
+            installationCost: latestQuote.installationCost || 0
+          });
+        }
+      }
     }
-  }, [project]);
+  }, [project, id]);
 
   // Clean up camera stream when dialog closes or component unmounts
   React.useEffect(() => {
@@ -241,9 +280,9 @@ const ProjectDetails: React.FC = () => {
       id: Date.now().toString(),
       category: '',
       unit: '',
-      lengthFt: 0, lengthIn: 0,
-      widthFt: 0, widthIn: 0,
-      breadthFt: 0, breadthIn: 0,
+      length: 0,
+      width: 0,
+      breadth: 0,
       qty: 1, rate: 0, amount: 0
     }]);
     setIsProductDialogOpen(true);
@@ -338,6 +377,8 @@ const ProjectDetails: React.FC = () => {
   const handleCreateQuotation = async () => {
     try {
       await createQuotation({ projectId: id, products, ...quoteDetails }).unwrap();
+      localStorage.removeItem(`quoteDraft_${id}`);
+      localStorage.removeItem(`quoteProducts_${id}`);
       await handleNextStage('advance_payment');
     } catch (err) {
       console.error(err);
@@ -618,10 +659,10 @@ const ProjectDetails: React.FC = () => {
                           <TableCell><Typography variant="body2">{p.category}</Typography></TableCell>
                           <TableCell><Typography variant="body2">{p.unit}</Typography></TableCell>
                           <TableCell>
-                            {p.unit !== 'Pieces' ? <Typography variant="body2">{p.lengthFt}' {p.lengthIn}"</Typography> : <Typography variant="body2" color="text.secondary">-</Typography>}
+                            {p.unit !== 'Pieces' ? <Typography variant="body2">{p.length}</Typography> : <Typography variant="body2" color="text.secondary">-</Typography>}
                           </TableCell>
                           <TableCell>
-                            {p.unit === 'Sq. Ft' ? <Typography variant="body2">{p.widthFt}' {p.widthIn}"</Typography> : <Typography variant="body2" color="text.secondary">-</Typography>}
+                            {p.unit !== 'Pieces' ? <Typography variant="body2">{p.width}</Typography> : <Typography variant="body2" color="text.secondary">-</Typography>}
                           </TableCell>
                           <TableCell><Typography variant="body2">{p.qty}</Typography></TableCell>
                           <TableCell><Typography variant="body2">₹{p.rate.toLocaleString('en-IN')}</Typography></TableCell>
