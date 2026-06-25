@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Box, Typography, Button, Paper, Stepper, Step, StepLabel, TextField, Divider, Chip, Dialog, DialogTitle, DialogContent, IconButton, Avatar, Select, MenuItem, FormControl, InputLabel, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Autocomplete, Snackbar, createFilterOptions } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import FolderSpecialIcon from '@mui/icons-material/FolderSpecial';
@@ -7,6 +7,8 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CloseIcon from '@mui/icons-material/Close';
 import RemoveIcon from '@mui/icons-material/Remove';
 import CameraAltIcon from '@mui/icons-material/CameraAlt';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import InfoIcon from '@mui/icons-material/Info';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { 
@@ -30,6 +32,7 @@ const filter = createFilterOptions<any>();
 const ProjectDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { data: project, isLoading, refetch } = useGetProjectByIdQuery(id as string);
   const { data: drawings, refetch: refetchDrawings } = useGetDrawingsQuery(id as string);
   const [updateProject] = useUpdateProjectMutation();
@@ -48,6 +51,13 @@ const ProjectDetails: React.FC = () => {
 
   const [activeStep, setActiveStep] = useState(0);
   const [viewingStepOverride, setViewingStepOverride] = useState<number | null>(null);
+
+  const queryParams = new URLSearchParams(location.search);
+  const viewParam = queryParams.get('view');
+
+  React.useEffect(() => {
+    setViewingStepOverride(viewParam !== null ? parseInt(viewParam, 10) : null);
+  }, [viewParam]);
   const [designFinalizedDate, setDesignFinalizedDate] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
@@ -484,10 +494,15 @@ const ProjectDetails: React.FC = () => {
   if (isLoading) return <Typography sx={{ p: 4 }}>Loading Project Details...</Typography>;
   if (!project) return <Typography sx={{ p: 4 }}>Project not found.</Typography>;
 
+  const isCrmView = location.pathname.includes('/crm');
   const isProjectActive = project ? ['shop_drawing', 'material_planning', 'production', 'work_order', 'completed'].includes(project.status) : false;
-  const currentSteps = isProjectActive ? projectSteps : crmSteps;
-  const displayActiveStep = isProjectActive ? Math.max(0, getStepIndex(project.status) - 4) : getStepIndex(project.status);
-  const stepToRender = viewingStepOverride !== null ? viewingStepOverride : activeStep;
+  const currentSteps = isCrmView ? crmSteps : projectSteps;
+  const displayActiveStep = isCrmView
+    ? (activeStep < 4 ? activeStep : 4)
+    : (activeStep >= 4 ? activeStep - 4 : 0);
+  const stepToRender = viewingStepOverride !== null 
+    ? viewingStepOverride 
+    : (isCrmView ? Math.min(3, activeStep) : Math.max(4, activeStep));
 
   return (
     <Box sx={{ maxWidth: 1536, mx: 'auto', px: { xs: 2, md: 4 } }}>
@@ -500,55 +515,7 @@ const ProjectDetails: React.FC = () => {
         Back to Pipeline
       </Button>
 
-      {/* TOP NAVIGATION TABS FOR ACTIVE PROJECTS */}
-      {isProjectActive && (
-        <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', mb: 3, p: 1.5, bgcolor: '#FFFDF5', borderRadius: 3, border: '1px solid #E8E1D5', alignItems: 'center' }}>
-          <Typography variant="body2" fontWeight="bold" color="text.secondary" sx={{ mr: 1 }}>View enquiry stages:</Typography>
-          <Button 
-            variant={viewingStepOverride === 0 ? "contained" : "outlined"} 
-            size="small" 
-            onClick={() => setViewingStepOverride(0)}
-            sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 'bold' }}
-          >
-            View Enquiry Details
-          </Button>
-          <Button 
-            variant={viewingStepOverride === 1 ? "contained" : "outlined"} 
-            size="small" 
-            onClick={() => setViewingStepOverride(1)}
-            sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 'bold' }}
-          >
-            View Reference Design
-          </Button>
-          <Button 
-            variant={viewingStepOverride === 2 ? "contained" : "outlined"} 
-            size="small" 
-            onClick={() => setViewingStepOverride(2)}
-            sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 'bold' }}
-          >
-            View Costing
-          </Button>
-          <Button 
-            variant={viewingStepOverride === 3 ? "contained" : "outlined"} 
-            size="small" 
-            onClick={() => setViewingStepOverride(3)}
-            sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 'bold' }}
-          >
-            View Advance Payment
-          </Button>
-          {viewingStepOverride !== null && (
-            <Button 
-              variant="contained" 
-              color="secondary" 
-              size="small" 
-              onClick={() => setViewingStepOverride(null)}
-              sx={{ ml: 'auto', borderRadius: 2, textTransform: 'none', fontWeight: 'bold', bgcolor: '#333', color: '#fff', '&:hover': { bgcolor: '#555' } }}
-            >
-              Back to Active Step
-            </Button>
-          )}
-        </Box>
-      )}
+
       
       <Box sx={{ display: 'flex', gap: 4, flexDirection: { xs: 'column', md: 'row' }, alignItems: 'flex-start' }}>
         {/* LEFT MAIN COLUMN */}
@@ -589,13 +556,12 @@ const ProjectDetails: React.FC = () => {
 
           {/* STEPPER */}
           <Paper elevation={0} sx={{ p: 4, mb: 4, border: '1px solid', borderColor: '#E8E1D5', borderRadius: 4, boxShadow: '0px 4px 20px rgba(0, 0, 0, 0.02)' }}>
-            <Stepper activeStep={isProjectActive ? displayActiveStep : activeStep} alternativeLabel>
+            <Stepper activeStep={displayActiveStep} alternativeLabel>
               {currentSteps.map((label, index) => {
-                const currentActiveStep = isProjectActive ? displayActiveStep : activeStep;
                 return (
                   <Step key={label}>
-                    <StepLabel sx={{ '& .MuiStepIcon-root': { color: currentActiveStep >= index ? '#B38B36 !important' : '#E0E0E0' } }}>
-                      <Typography sx={{ fontWeight: currentActiveStep === index ? 700 : 500, color: currentActiveStep === index ? 'text.primary' : 'text.secondary' }}>
+                    <StepLabel sx={{ '& .MuiStepIcon-root': { color: displayActiveStep >= index ? '#B38B36 !important' : '#E0E0E0' } }}>
+                      <Typography sx={{ fontWeight: displayActiveStep === index ? 700 : 500, color: displayActiveStep === index ? 'text.primary' : 'text.secondary' }}>
                         {label}
                       </Typography>
                     </StepLabel>
@@ -607,6 +573,45 @@ const ProjectDetails: React.FC = () => {
 
           {/* CONTENT AREA */}
           <Box sx={{ minHeight: 400 }}>
+            
+            {/* VIEWING OVERRIDE WARNING BANNER */}
+            {viewingStepOverride !== null && isProjectActive && (
+              <Box sx={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'space-between', 
+                p: 2.5, 
+                mb: 4, 
+                bgcolor: '#FFF9E6', 
+                border: '1.5px solid #FFD54F', 
+                borderRadius: 3,
+                boxShadow: '0 4px 15px rgba(255, 179, 0, 0.08)'
+              }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                  <InfoIcon sx={{ color: '#B38B36', fontSize: '1.75rem' }} />
+                  <Typography variant="body1" color="text.primary" fontWeight="600">
+                    You are viewing a past CRM stage: <span style={{ color: '#B38B36', fontWeight: '800' }}>{crmSteps[viewingStepOverride] || crmSteps[0]}</span>
+                  </Typography>
+                </Box>
+                <Button 
+                  variant="contained" 
+                  size="medium" 
+                  onClick={() => navigate(`/projects/${id}`)}
+                  sx={{ 
+                    bgcolor: '#B38B36', 
+                    color: '#fff', 
+                    '&:hover': { bgcolor: '#936F28' }, 
+                    borderRadius: 2, 
+                    textTransform: 'none', 
+                    fontWeight: 'bold',
+                    px: 3,
+                    boxShadow: '0 2px 8px rgba(179, 139, 54, 0.2)'
+                  }}
+                >
+                  Back to Active Step
+                </Button>
+              </Box>
+            )}
             
             {/* STEP 0: ENQUIRY DETAILS */}
             {stepToRender === 0 && (
@@ -1311,35 +1316,32 @@ const ProjectDetails: React.FC = () => {
           <Paper elevation={0} sx={{ p: 4, border: '1px solid', borderColor: '#E8E1D5', borderRadius: 4, position: 'sticky', top: 24, boxShadow: '0px 4px 20px rgba(0, 0, 0, 0.02)' }}>
             <Typography variant="h6" fontWeight="bold" mb={3} color="text.primary">Activity Log</Typography>
             
-            <Stepper orientation="vertical" activeStep={activeStep} sx={{ '& .MuiStepConnector-line': { minHeight: 40 } }}>
-              {steps.map((label, index) => {
+            <Stepper orientation="vertical" activeStep={displayActiveStep} sx={{ '& .MuiStepConnector-line': { minHeight: 40 } }}>
+              {currentSteps.map((label, index) => {
+                const absoluteIndex = isCrmView ? index : index + 4;
                 const dbStep = project ? getStepIndex(project.status) : 0;
-                const isCompleted = dbStep > index;
-                const dateToShow = index === 0 ? project?.createdAt : project?.updatedAt;
+                const isCompleted = dbStep > absoluteIndex;
+                const dateToShow = absoluteIndex === 0 ? project?.createdAt : project?.updatedAt;
                 const dateStr = dateToShow ? new Date(dateToShow).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '';
 
                 return (
                 <Step key={label}>
                   <StepLabel 
-                    sx={{ cursor: dbStep >= index ? 'pointer' : 'default', '& .MuiStepIcon-root': { color: activeStep > index || dbStep > index ? '#4CAF50 !important' : activeStep === index ? '#B38B36 !important' : '#E0E0E0' } }}
+                    sx={{ cursor: dbStep >= absoluteIndex ? 'pointer' : 'default', '& .MuiStepIcon-root': { color: activeStep > absoluteIndex || dbStep > absoluteIndex ? '#4CAF50 !important' : activeStep === absoluteIndex ? '#B38B36 !important' : '#E0E0E0' } }}
                     onClick={() => {
-                      if (dbStep >= index) {
-                        if (isProjectActive && index < 4) {
-                          setViewingStepOverride(index);
-                        } else {
-                          setViewingStepOverride(null);
-                          setActiveStep(index);
-                        }
+                      if (dbStep >= absoluteIndex) {
+                        setViewingStepOverride(null);
+                        setActiveStep(absoluteIndex);
                       }
                     }}
                   >
                     <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                      <Typography sx={{ fontWeight: activeStep === index ? 700 : 500, color: activeStep >= index || dbStep >= index ? 'text.primary' : 'text.secondary' }}>
+                      <Typography sx={{ fontWeight: activeStep === absoluteIndex ? 700 : 500, color: activeStep >= absoluteIndex || dbStep >= absoluteIndex ? 'text.primary' : 'text.secondary' }}>
                         {label}
                       </Typography>
-                      {dbStep > index ? (
+                      {dbStep > absoluteIndex ? (
                         <Typography variant="caption" color="success.main">Completed • {dateStr}</Typography>
-                      ) : activeStep === index && dbStep === index ? (
+                      ) : activeStep === absoluteIndex && dbStep === absoluteIndex ? (
                         <Typography variant="caption" color="primary.main" fontWeight="bold">In Progress</Typography>
                       ) : (
                         <Typography variant="caption" color="text.secondary">Pending</Typography>
@@ -1470,9 +1472,33 @@ const ProjectDetails: React.FC = () => {
                     variant="outlined"
                     component="label"
                     disabled={isUploading}
-                    sx={{ height: 80, width: 80, borderStyle: 'dashed', borderColor: '#B38B36', bgcolor: '#FFFDF5', '&:hover': { bgcolor: '#FFF4E5' }, borderRadius: 2, display: 'flex', flexDirection: 'column', fontSize: '0.75rem', color: '#B38B36', justifyContent: 'center', alignItems: 'center', textTransform: 'none', fontWeight: 'bold' }}
+                    sx={{ 
+                      height: 100, 
+                      width: 130, 
+                      border: '1.5px dashed #B38B36', 
+                      bgcolor: '#FFFDF5', 
+                      borderRadius: 3, 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      fontSize: '0.82rem', 
+                      color: '#B38B36', 
+                      justifyContent: 'center', 
+                      alignItems: 'center',
+                      textTransform: 'none', 
+                      fontWeight: '600',
+                      boxShadow: '0 2px 8px rgba(179, 139, 54, 0.04)',
+                      transition: 'all 0.2s ease-in-out',
+                      '&:hover': { 
+                        borderColor: '#B38B36', 
+                        bgcolor: '#FFF4E5', 
+                        color: '#B38B36',
+                        transform: 'translateY(-2px)',
+                        boxShadow: '0 4px 12px rgba(179, 139, 54, 0.15)'
+                      } 
+                    }}
                   >
-                    {isUploading ? 'Uploading...' : '+ Upload'}
+                    <CloudUploadIcon sx={{ fontSize: '1.75rem', mb: 0.5, color: '#B38B36' }} />
+                    {isUploading ? 'Uploading...' : 'Upload Photo'}
                     <input
                       type="file"
                       hidden
@@ -1502,10 +1528,33 @@ const ProjectDetails: React.FC = () => {
                     variant="outlined"
                     disabled={isUploading}
                     onClick={() => startCamera('clientPhoto')}
-                    sx={{ height: 80, width: 80, borderStyle: 'dashed', borderColor: '#B38B36', bgcolor: '#FFFDF5', '&:hover': { bgcolor: '#FFF4E5' }, borderRadius: 2, display: 'flex', flexDirection: 'column', fontSize: '0.75rem', color: '#B38B36', justifyContent: 'center', alignItems: 'center', textTransform: 'none', fontWeight: 'bold' }}
+                    sx={{ 
+                      height: 100, 
+                      width: 130, 
+                      border: '1.5px dashed #B38B36', 
+                      bgcolor: '#FFFDF5', 
+                      borderRadius: 3, 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      fontSize: '0.82rem', 
+                      color: '#B38B36', 
+                      justifyContent: 'center', 
+                      alignItems: 'center',
+                      textTransform: 'none', 
+                      fontWeight: '600',
+                      boxShadow: '0 2px 8px rgba(179, 139, 54, 0.04)',
+                      transition: 'all 0.2s ease-in-out',
+                      '&:hover': { 
+                        borderColor: '#B38B36', 
+                        bgcolor: '#FFF4E5', 
+                        color: '#B38B36',
+                        transform: 'translateY(-2px)',
+                        boxShadow: '0 4px 12px rgba(179, 139, 54, 0.15)'
+                      } 
+                    }}
                   >
-                    <Typography sx={{ fontSize: '1.25rem', mb: 0.5 }}>📷</Typography>
-                    Camera
+                    <CameraAltIcon sx={{ fontSize: '1.75rem', mb: 0.5, color: '#B38B36' }} />
+                    Take Photo
                   </Button>
                 </Box>
               )}

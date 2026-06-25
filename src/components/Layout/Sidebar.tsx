@@ -11,6 +11,7 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import { NavLink } from 'react-router-dom';
 import GroupsIcon from '@mui/icons-material/Groups';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
+import LiveTvIcon from '@mui/icons-material/LiveTv';
 
 interface SidebarProps {
   mobileOpen: boolean;
@@ -20,6 +21,7 @@ interface SidebarProps {
 
 const menuItems = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
+  { text: 'Live Feed', icon: <LiveTvIcon />, path: '/live-feed' },
   { text: 'Enquiries Pipeline', icon: <FilterAltIcon />, path: '/crm' },
   { text: 'Active Work Orders', icon: <WorkIcon />, path: '/projects' },
   { text: 'Machine Master', icon: <PrecisionManufacturingIcon />, path: '/machines' },

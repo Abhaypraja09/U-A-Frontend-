@@ -37,7 +37,7 @@ const Login: React.FC = () => {
         
         <Box component="form" onSubmit={handleLogin} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <TextField 
-            label="Email or Username" 
+            label="Email or Staff ID" 
             variant="outlined" 
             fullWidth 
             required 

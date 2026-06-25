@@ -11,6 +11,7 @@ import Production from './pages/Production';
 import Dispatch from './pages/Dispatch';
 import HR from './pages/HR';
 import Dashboard from './pages/Dashboard';
+import LiveFeed from './pages/LiveFeed';
 import Machines from './pages/Machines';
 import ProjectDetails from './pages/ProjectDetails';
 
@@ -33,6 +34,10 @@ const router = createBrowserRouter([
       {
         index: true,
         element: <Dashboard />
+      },
+      {
+        path: 'live-feed',
+        element: <LiveFeed />
       },
       {
         path: 'crm',

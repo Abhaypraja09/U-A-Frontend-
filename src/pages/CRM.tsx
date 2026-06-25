@@ -10,6 +10,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CloseIcon from '@mui/icons-material/Close';
 import CameraAltIcon from '@mui/icons-material/CameraAlt';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import { IconButton } from '@mui/material';
 import { useGetProjectsQuery, useCreateProjectMutation, useUpdateProjectMutation, useDeleteProjectMutation, useUploadFilesMutation } from '../store/apiSlice';
 
@@ -440,9 +441,33 @@ const CRM: React.FC = () => {
                       variant="outlined"
                       component="label"
                       disabled={isUploading}
-                      sx={{ height: 80, width: 80, borderStyle: 'dashed', borderColor: '#B38B36', bgcolor: '#FFFDF5', '&:hover': { bgcolor: '#FFF4E5' }, borderRadius: 2, display: 'flex', flexDirection: 'column', fontSize: '0.75rem', color: '#B38B36', justifyContent: 'center', alignItems: 'center', textTransform: 'none', fontWeight: 'bold' }}
+                      sx={{ 
+                        height: 100, 
+                        width: 130, 
+                        border: '1.5px dashed #B38B36', 
+                        bgcolor: '#FFFDF5', 
+                        borderRadius: 3, 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        fontSize: '0.82rem', 
+                        color: '#B38B36', 
+                        justifyContent: 'center', 
+                        alignItems: 'center',
+                        textTransform: 'none', 
+                        fontWeight: '600',
+                        boxShadow: '0 2px 8px rgba(179, 139, 54, 0.04)',
+                        transition: 'all 0.2s ease-in-out',
+                        '&:hover': { 
+                          borderColor: '#B38B36', 
+                          bgcolor: '#FFF4E5', 
+                          color: '#B38B36',
+                          transform: 'translateY(-2px)',
+                          boxShadow: '0 4px 12px rgba(179, 139, 54, 0.15)'
+                        } 
+                      }}
                     >
-                      {isUploading ? 'Uploading...' : '+ Upload'}
+                      <CloudUploadIcon sx={{ fontSize: '1.75rem', mb: 0.5, color: '#B38B36' }} />
+                      {isUploading ? 'Uploading...' : 'Upload Photo'}
                       <input
                         type="file"
                         hidden
@@ -468,10 +493,33 @@ const CRM: React.FC = () => {
                       variant="outlined"
                       disabled={isUploading}
                       onClick={startCamera}
-                      sx={{ height: 80, width: 80, borderStyle: 'dashed', borderColor: '#B38B36', bgcolor: '#FFFDF5', '&:hover': { bgcolor: '#FFF4E5' }, borderRadius: 2, display: 'flex', flexDirection: 'column', fontSize: '0.75rem', color: '#B38B36', justifyContent: 'center', alignItems: 'center', textTransform: 'none', fontWeight: 'bold' }}
+                      sx={{ 
+                        height: 100, 
+                        width: 130, 
+                        border: '1.5px dashed #B38B36', 
+                        bgcolor: '#FFFDF5', 
+                        borderRadius: 3, 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        fontSize: '0.82rem', 
+                        color: '#B38B36', 
+                        justifyContent: 'center', 
+                        alignItems: 'center',
+                        textTransform: 'none', 
+                        fontWeight: '600',
+                        boxShadow: '0 2px 8px rgba(179, 139, 54, 0.04)',
+                        transition: 'all 0.2s ease-in-out',
+                        '&:hover': { 
+                          borderColor: '#B38B36', 
+                          bgcolor: '#FFF4E5', 
+                          color: '#B38B36',
+                          transform: 'translateY(-2px)',
+                          boxShadow: '0 4px 12px rgba(179, 139, 54, 0.15)'
+                        } 
+                      }}
                     >
-                      <Typography sx={{ fontSize: '1.25rem', mb: 0.5 }}>📷</Typography>
-                      Camera
+                      <CameraAltIcon sx={{ fontSize: '1.75rem', mb: 0.5, color: '#B38B36' }} />
+                      Take Photo
                     </Button>
                   </Box>
                 )}

@@ -123,6 +123,14 @@ export const apiSlice = createApi({
       query: () => '/hr/attendance/active',
       providesTags: ['Attendance']
     }),
+    machineClockIn: builder.mutation<any, any>({
+      query: (body) => ({ url: '/machine-logs/clock-in', method: 'POST', body }),
+      invalidatesTags: ['Production', 'Attendance']
+    }),
+    getWorkOrders: builder.query<any[], void>({
+      query: () => '/production/work-orders',
+      providesTags: ['Production']
+    }),
     getStaffSalary: builder.query<any[], void>({
       query: () => '/hr/staff-salary',
       providesTags: ['Attendance'],
@@ -287,6 +295,8 @@ export const {
   usePunchInMutation,
   usePunchOutMutation,
   useGetActiveSessionQuery,
+  useMachineClockInMutation,
+  useGetWorkOrdersQuery,
   useGetDispatchesQuery,
   useCreateDispatchMutation,
   useGetAttendanceQuery,

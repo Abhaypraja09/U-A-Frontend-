@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
-import { Box, Typography, Button, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, Grid } from '@mui/material';
+import { Box, Typography, Button, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, Tabs, Tab } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import { useGetProductionLogsQuery, useCreateProductionLogMutation, useUpdateProductionLogMutation, useGetProjectsQuery, useGetMachinesQuery } from '../store/apiSlice';
+import { useGetWorkOrdersQuery, useGetProjectsQuery, useGetMachinesQuery, useGetProductionLogsQuery, useCreateProductionLogMutation, useUpdateProductionLogMutation } from '../store/apiSlice';
 
 const Production: React.FC = () => {
-  const { data: logs, isLoading, refetch } = useGetProductionLogsQuery(undefined, { pollingInterval: 15000 });
+  const [tab, setTab] = useState(0);
+  const { data: workOrders, isLoading: workOrdersLoading, refetch: refetchWorkOrders } = useGetWorkOrdersQuery(undefined, { pollingInterval: 15000 });
+  const { data: logs, isLoading: logsLoading, refetch: refetchLogs } = useGetProductionLogsQuery(undefined, { pollingInterval: 15000 });
   const { data: projects } = useGetProjectsQuery();
   const { data: machines } = useGetMachinesQuery();
+  
   const [createLog] = useCreateProductionLogMutation();
   const [updateLog] = useUpdateProductionLogMutation();
 
@@ -42,7 +45,7 @@ const Production: React.FC = () => {
         } 
       }).unwrap();
       setCompleteOpen(false);
-      refetch();
+      refetchLogs();
     } catch (err) {
       console.error('Failed to complete production log', err);
     }
@@ -52,7 +55,7 @@ const Production: React.FC = () => {
     try {
       await createLog(formData).unwrap();
       handleClose();
-      refetch();
+      refetchLogs();
     } catch (err) {
       console.error('Failed to create production log', err);
     }
@@ -62,91 +65,159 @@ const Production: React.FC = () => {
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 'bold' }}>Supervisor Logbook</Typography>
-          <Typography variant="body2" color="textSecondary">Track active production, assign machines, and record daily Sq.Ft. output.</Typography>
+          <Typography variant="h4" sx={{ fontWeight: 'bold' }}>Production Management</Typography>
+          <Typography variant="body2" color="textSecondary">Track daily stages or view overall active work orders.</Typography>
         </Box>
-        <Button variant="contained" color="primary" startIcon={<PlayArrowIcon />} onClick={handleOpen} sx={{ borderRadius: 8 }}>
-          Start New Stage
-        </Button>
+        {tab === 0 && (
+          <Button variant="contained" color="primary" startIcon={<PlayArrowIcon />} onClick={handleOpen} sx={{ borderRadius: 8 }}>
+            Start New Stage
+          </Button>
+        )}
       </Box>
 
-      <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 4 }}>
-        <Table>
-          <TableHead sx={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
-            <TableRow>
-              <TableCell><strong>Work Order</strong></TableCell>
-              <TableCell><strong>Stage</strong></TableCell>
-              <TableCell><strong>Status</strong></TableCell>
-              <TableCell><strong>Start Time</strong></TableCell>
-              <TableCell><strong>Machine/Worker</strong></TableCell>
-              <TableCell><strong>Output (Sq.Ft.)</strong></TableCell>
-              <TableCell><strong>Remarks</strong></TableCell>
-              <TableCell align="right"><strong>Actions</strong></TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {isLoading ? (
-              <TableRow><TableCell colSpan={8} align="center" sx={{ p: 3 }}>Loading Supervisor Logbook...</TableCell></TableRow>
-            ) : logs?.length === 0 ? (
-              <TableRow><TableCell colSpan={8} align="center" sx={{ p: 3 }}>No production logs found.</TableCell></TableRow>
-            ) : (
-              logs?.map((log: any) => (
-                <TableRow key={log.id} hover sx={{ bgcolor: log.status === 'completed' ? 'rgba(76, 175, 80, 0.04)' : 'inherit' }}>
-                  <TableCell>
-                    <Typography sx={{ fontWeight: 'bold', color: 'primary.main' }}>{log.project?.projectId || log.projectId}</Typography>
-                    <Typography variant="caption">{log.project?.name || 'Unknown Project'}</Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Chip 
-                      label={log.stage.toUpperCase()} 
-                      color="secondary"
-                      size="small" 
-                      sx={{ fontWeight: 'bold', letterSpacing: 0.5 }}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Chip 
-                      label={log.status.toUpperCase()} 
-                      color={log.status === 'in_progress' ? 'warning' : 'success'} 
-                      size="small" 
-                      sx={{ fontWeight: 'bold' }}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2">{new Date(log.startTime).toLocaleDateString()}</Typography>
-                    <Typography variant="caption" color="textSecondary">{new Date(log.startTime).toLocaleTimeString()}</Typography>
-                  </TableCell>
-                  <TableCell>{log.machine?.name || 'Manual Labor'}</TableCell>
-                  <TableCell>
-                    {log.status === 'completed' ? (
-                      <Typography sx={{ fontWeight: 'bold', color: 'success.main' }}>{log.quantityProduced} Sq.Ft.</Typography>
-                    ) : (
-                      <Typography variant="body2" color="textSecondary">Pending</Typography>
-                    )}
-                  </TableCell>
-                  <TableCell sx={{ maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {log.remarks || '-'}
-                  </TableCell>
-                  <TableCell align="right">
-                    {log.status === 'in_progress' && (
-                      <Button 
+      <Paper sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+        <Tabs value={tab} onChange={(e, v) => setTab(v)}>
+          <Tab label="Supervisor Logbook" />
+          <Tab label="Active Work Orders" />
+        </Tabs>
+      </Paper>
+
+      {tab === 0 && (
+        <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 4 }}>
+          <Table>
+            <TableHead sx={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
+              <TableRow>
+                <TableCell><strong>Work Order</strong></TableCell>
+                <TableCell><strong>Stage</strong></TableCell>
+                <TableCell><strong>Status</strong></TableCell>
+                <TableCell><strong>Start Time</strong></TableCell>
+                <TableCell><strong>Machine/Worker</strong></TableCell>
+                <TableCell><strong>Output (Sq.Ft.)</strong></TableCell>
+                <TableCell><strong>Remarks</strong></TableCell>
+                <TableCell align="right"><strong>Actions</strong></TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {logsLoading ? (
+                <TableRow><TableCell colSpan={8} align="center" sx={{ p: 3 }}>Loading Supervisor Logbook...</TableCell></TableRow>
+              ) : logs?.length === 0 ? (
+                <TableRow><TableCell colSpan={8} align="center" sx={{ p: 3 }}>No production logs found.</TableCell></TableRow>
+              ) : (
+                logs?.map((log: any) => (
+                  <TableRow key={log.id} hover sx={{ bgcolor: log.status === 'completed' ? 'rgba(76, 175, 80, 0.04)' : 'inherit' }}>
+                    <TableCell>
+                      <Typography sx={{ fontWeight: 'bold', color: 'primary.main' }}>{log.project?.projectId || log.projectId}</Typography>
+                      <Typography variant="caption">{log.project?.name || 'Unknown Project'}</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip 
+                        label={log.stage.toUpperCase()} 
+                        color="secondary"
                         size="small" 
-                        variant="contained" 
-                        color="success" 
-                        startIcon={<CheckCircleIcon />}
-                        onClick={() => handleOpenComplete(log)}
-                        sx={{ borderRadius: 6 }}
-                      >
-                        Record Output
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
+                        sx={{ fontWeight: 'bold', letterSpacing: 0.5 }}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Chip 
+                        label={log.status.toUpperCase()} 
+                        color={log.status === 'in_progress' ? 'warning' : 'success'} 
+                        size="small" 
+                        sx={{ fontWeight: 'bold' }}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">{new Date(log.startTime).toLocaleDateString()}</Typography>
+                      <Typography variant="caption" color="textSecondary">{new Date(log.startTime).toLocaleTimeString()}</Typography>
+                    </TableCell>
+                    <TableCell>{log.machine?.name || 'Manual Labor'}</TableCell>
+                    <TableCell>
+                      {log.status === 'completed' ? (
+                        <Typography sx={{ fontWeight: 'bold', color: 'success.main' }}>{log.quantityProduced} Sq.Ft.</Typography>
+                      ) : (
+                        <Typography variant="body2" color="textSecondary">Pending</Typography>
+                      )}
+                    </TableCell>
+                    <TableCell sx={{ maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {log.remarks || '-'}
+                    </TableCell>
+                    <TableCell align="right">
+                      {log.status === 'in_progress' && (
+                        <Button 
+                          size="small" 
+                          variant="contained" 
+                          color="success" 
+                          startIcon={<CheckCircleIcon />}
+                          onClick={() => handleOpenComplete(log)}
+                          sx={{ borderRadius: 6 }}
+                        >
+                          Record Output
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+
+      {tab === 1 && (
+        <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 4 }}>
+          <Table>
+            <TableHead sx={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
+              <TableRow>
+                <TableCell><strong>Client's Demand</strong></TableCell>
+                <TableCell><strong>Machine Used</strong></TableCell>
+                <TableCell><strong>Time (Start - End)</strong></TableCell>
+                <TableCell><strong>Date Range</strong></TableCell>
+                <TableCell><strong>Total Usage Time</strong></TableCell>
+                <TableCell><strong>Status</strong></TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {workOrdersLoading ? (
+                <TableRow><TableCell colSpan={6} align="center" sx={{ p: 3 }}>Loading Active Work Orders...</TableCell></TableRow>
+              ) : workOrders?.length === 0 ? (
+                <TableRow><TableCell colSpan={6} align="center" sx={{ p: 3 }}>No active work orders found.</TableCell></TableRow>
+              ) : (
+                workOrders?.map((wo: any) => (
+                  <TableRow key={wo.id} hover>
+                    <TableCell>
+                      <Typography sx={{ fontWeight: 'bold', color: 'primary.main' }}>{wo.projectId}</Typography>
+                      <Typography variant="body2">{wo.clientDemand}</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip label={wo.machinesUsed} color="default" size="small" />
+                    </TableCell>
+                    <TableCell>
+                      {wo.startTime && wo.endTime ? (
+                        <Typography variant="body2">
+                          {new Date(wo.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(wo.endTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        </Typography>
+                      ) : 'N/A'}
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">{wo.dateRange}</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography sx={{ fontWeight: 'bold' }}>{wo.totalUsageTime}</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip 
+                        label={wo.status} 
+                        color={wo.status === 'In Progress' ? 'warning' : 'success'} 
+                        size="small" 
+                        sx={{ fontWeight: 'bold' }}
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
 
       {/* Start Production Dialog */}
       <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 4 } }}>

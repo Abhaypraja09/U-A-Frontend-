@@ -1,12 +1,17 @@
 import React, { useState } from 'react';
-import { Box, Typography, Button, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, Tabs, Tab } from '@mui/material';
+import { Box, Typography, Button, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, Tabs, Tab, TextField, MenuItem, CircularProgress, Alert } from '@mui/material';
 import FingerprintIcon from '@mui/icons-material/Fingerprint';
-import { useGetAttendanceQuery, useGetStaffSalaryQuery } from '../store/apiSlice';
+import PersonAddIcon from '@mui/icons-material/PersonAdd';
+import { useGetAttendanceQuery, useGetStaffSalaryQuery, useRegisterUserMutation } from '../store/apiSlice';
 
 const HR: React.FC = () => {
   const [tab, setTab] = useState(0);
   const { data: attendance, isLoading: attLoading } = useGetAttendanceQuery();
-  const { data: staff, isLoading: staffLoading } = useGetStaffSalaryQuery();
+  const { data: staff, isLoading: staffLoading, refetch: refetchStaff } = useGetStaffSalaryQuery();
+  const [registerUser, { isLoading: registering }] = useRegisterUserMutation();
+
+  const [staffData, setStaffData] = useState({ name: '', email: '', staffId: '', password: '', role: 'worker', department: '' });
+  const [successMsg, setSuccessMsg] = useState('');
 
   const handleCheckIn = async () => {
     try {
@@ -19,6 +24,19 @@ const HR: React.FC = () => {
       window.location.reload();
     } catch (err) {
       console.error('Check-in failed', err);
+    }
+  };
+
+  const handleCreateStaff = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await registerUser(staffData).unwrap();
+      setSuccessMsg(`Staff ${staffData.name} created successfully! They can now login with Staff ID: ${staffData.staffId}`);
+      setStaffData({ name: '', email: '', staffId: '', password: '', role: 'worker', department: '' });
+      refetchStaff();
+    } catch (err) {
+      console.error(err);
+      alert('Error creating staff');
     }
   };
 
@@ -35,6 +53,7 @@ const HR: React.FC = () => {
         <Tabs value={tab} onChange={(e, v) => setTab(v)}>
           <Tab label="Attendance Logs" />
           <Tab label="Staff Salary (Piece Rate)" />
+          <Tab label="Manage Staff" />
         </Tabs>
       </Paper>
 
@@ -110,6 +129,59 @@ const HR: React.FC = () => {
             </TableBody>
           </Table>
         </TableContainer>
+      )}
+
+      {tab === 2 && (
+        <Paper elevation={0} sx={{ p: 4, border: '1px solid', borderColor: 'divider', borderRadius: 2, maxWidth: 600 }}>
+          <Typography variant="h6" mb={3} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <PersonAddIcon /> Create New Staff
+          </Typography>
+          
+          {successMsg && <Alert severity="success" sx={{ mb: 3 }}>{successMsg}</Alert>}
+          
+          <Box component="form" onSubmit={handleCreateStaff} sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <TextField 
+                label="Full Name" fullWidth required 
+                value={staffData.name} onChange={(e) => setStaffData({...staffData, name: e.target.value})}
+              />
+              <TextField 
+                label="Staff ID (e.g., EMP001)" fullWidth required 
+                value={staffData.staffId} onChange={(e) => setStaffData({...staffData, staffId: e.target.value})}
+              />
+            </Box>
+            
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <TextField 
+                label="Email (Optional)" fullWidth type="email"
+                value={staffData.email} onChange={(e) => setStaffData({...staffData, email: e.target.value})}
+              />
+              <TextField 
+                label="Password" fullWidth required type="password"
+                value={staffData.password} onChange={(e) => setStaffData({...staffData, password: e.target.value})}
+              />
+            </Box>
+
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <TextField 
+                label="Role" fullWidth select required
+                value={staffData.role} onChange={(e) => setStaffData({...staffData, role: e.target.value})}
+              >
+                <MenuItem value="worker">Worker</MenuItem>
+                <MenuItem value="employee">Employee</MenuItem>
+                <MenuItem value="admin">Admin</MenuItem>
+              </TextField>
+              <TextField 
+                label="Department" fullWidth 
+                value={staffData.department} onChange={(e) => setStaffData({...staffData, department: e.target.value})}
+              />
+            </Box>
+
+            <Button type="submit" variant="contained" color="primary" size="large" disabled={registering}>
+              {registering ? <CircularProgress size={24} /> : 'Create Staff Profile'}
+            </Button>
+          </Box>
+        </Paper>
       )}
     </Box>
   );

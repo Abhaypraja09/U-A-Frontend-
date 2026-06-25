@@ -8,7 +8,9 @@ import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import ShieldIcon from '@mui/icons-material/Shield';
 import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturing';
 import ReceiptIcon from '@mui/icons-material/Receipt';
-import { useGetDashboardSummaryQuery, useGetLiveFeedQuery } from '../store/apiSlice';
+import LiveTvIcon from '@mui/icons-material/LiveTv';
+import { useGetDashboardSummaryQuery } from '../store/apiSlice';
+import { useNavigate } from 'react-router-dom';
 
 const DashboardCard = ({ icon: Icon, title, value, colorHint = 'primary.main', bgHint = 'secondary.main' }: any) => (
   <Paper sx={{ p: 3, borderRadius: 4, display: 'flex', flexDirection: 'column', height: '100%', border: '1px solid', borderColor: 'divider', boxShadow: 'none' }}>
@@ -28,7 +30,11 @@ const DashboardCard = ({ icon: Icon, title, value, colorHint = 'primary.main', b
 
 const Dashboard: React.FC = () => {
   const { data: summary, isLoading } = useGetDashboardSummaryQuery();
-  const { data: liveFeed, isLoading: feedLoading } = useGetLiveFeedQuery(undefined, { pollingInterval: 10000 });
+  const navigate = useNavigate();
+
+  const handleOpenLiveFeed = () => {
+    navigate('/live-feed');
+  };
 
   const handleExport = async (type: string) => {
     try {
@@ -74,6 +80,9 @@ const Dashboard: React.FC = () => {
           </Box>
         </Box>
         <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button variant="contained" color="secondary" startIcon={<LiveTvIcon />} onClick={handleOpenLiveFeed} sx={{ borderRadius: 8 }}>
+            Live Feed
+          </Button>
           <Button variant="contained" color="primary" startIcon={<PictureAsPdfIcon />} onClick={() => handleExport('pdf')} sx={{ borderRadius: 8 }}>
             Export Report
           </Button>
@@ -106,59 +115,6 @@ const Dashboard: React.FC = () => {
           <DashboardCard icon={GroupIcon} title="LABOR COST" value={`₹${summary?.profitability?.laborCost?.toLocaleString() || 0}`} colorHint="warning.main" bgHint="warning.light" />
         </Grid>
       </Grid>
-
-      {/* Live Factory Feed Section */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
-        <PrecisionManufacturingIcon color="primary" fontSize="large" />
-        <Typography variant="h5" sx={{ fontWeight: 'bold' }}>Live Factory Feed</Typography>
-      </Box>
-
-      <Paper elevation={0} sx={{ p: 3, border: '1px solid', borderColor: 'divider', borderRadius: 4, mb: 4 }}>
-        {feedLoading ? <Typography>Loading Live Feed...</Typography> : (
-          <Grid container spacing={2}>
-            {liveFeed?.length === 0 && <Typography p={2}>No machines configured.</Typography>}
-            {liveFeed?.map((machine: any) => (
-              <Grid xs={12} sm={6} md={4} lg={3} key={machine.id}>
-                <Paper 
-                  elevation={machine.status === 'active' ? 2 : 0} 
-                  sx={{ 
-                    p: 3, 
-                    borderRadius: 3,
-                    border: '1px solid', 
-                    borderColor: machine.status === 'active' ? 'success.main' : 'divider',
-                    bgcolor: machine.status === 'active' ? '#F4FBF5' : 'background.paper'
-                  }}
-                >
-                  <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Typography sx={{ fontWeight: 'bold' }}>{machine.name}</Typography>
-                      {(machine.totalRunHours || 0) >= (machine.maintenanceIntervalHours || 200) && (
-                        <Chip label="SERVICE DUE" color="error" size="small" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 'bold' }} />
-                      )}
-                    </Box>
-                    <Box sx={{ 
-                      width: 12, height: 12, borderRadius: '50%', 
-                      bgcolor: machine.status === 'active' ? 'success.main' : 'error.main' 
-                    }} />
-                  </Box>
-                  {machine.status === 'active' ? (
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                      <Typography variant="body2" color="text.secondary">Worker: <strong>{machine.currentWorker?.name}</strong></Typography>
-                      <Typography variant="body2" color="text.secondary">Project: <strong>{machine.currentProject || 'Unknown'}</strong></Typography>
-                      <Typography variant="body2" color="text.secondary">Stage: <strong>{machine.currentStage || 'N/A'}</strong></Typography>
-                      <Typography variant="caption" color="text.secondary" sx={{ mt: 1, bgcolor: 'rgba(0,0,0,0.05)', p: 0.5, borderRadius: 1, display: 'inline-block', width: 'fit-content' }}>
-                        Started: {new Date(machine.sessionStartedAt).toLocaleTimeString()}
-                      </Typography>
-                    </Box>
-                  ) : (
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>Machine is Idle</Typography>
-                  )}
-                </Paper>
-              </Grid>
-            ))}
-          </Grid>
-        )}
-      </Paper>
     </Box>
   );
 };
