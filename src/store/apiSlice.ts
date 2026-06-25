@@ -2,8 +2,7 @@ import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import type { BaseQueryFn, FetchArgs, FetchBaseQueryError } from '@reduxjs/toolkit/query';
 import { logout } from './authSlice';
 
-const isDev = import.meta.env.DEV;
-const API_BASE_URL = import.meta.env.VITE_API_URL || (isDev ? '/api' : 'http://unnati.yatreedestination.com:5000/api');
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 const baseQuery = fetchBaseQuery({
   baseUrl: API_BASE_URL,
