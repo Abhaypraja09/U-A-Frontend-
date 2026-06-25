@@ -165,7 +165,7 @@ const CRM: React.FC = () => {
   };
 
   // Filter logic
-  let enquiries = projects?.filter((p: any) => !['material_planning', 'production', 'work_order', 'completed'].includes(p.status)) || [];
+  let enquiries = projects?.filter((p: any) => !['shop_drawing', 'material_planning', 'production', 'work_order', 'completed'].includes(p.status)) || [];
   
   if (selectedMonth !== 'All') {
     enquiries = enquiries.filter((p: any) => {
@@ -419,7 +419,7 @@ const CRM: React.FC = () => {
               fullWidth 
               value={formData.createdAt} 
               onChange={(e) => setFormData({...formData, createdAt: e.target.value})}
-              InputLabelProps={{ shrink: true }}
+              slotProps={{ inputLabel: { shrink: true } }}
             />
             <Box>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontWeight: 'bold' }}>Client Photo</Typography>

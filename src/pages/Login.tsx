@@ -32,28 +32,31 @@ const Login: React.FC = () => {
   return (
     <Box sx={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'background.default' }}>
       <Paper elevation={3} sx={{ p: 4, width: '100%', maxWidth: 400 }}>
-        <Typography variant="h4" fontWeight="bold" textAlign="center" mb={3}>Unnati Arts ERP</Typography>
-        <Typography variant="body1" textAlign="center" color="text.secondary" mb={4}>Sign in to your account</Typography>
+        <Typography variant="h4" fontWeight="bold" align="center" mb={3}>Unnati Arts ERP</Typography>
+        <Typography variant="body1" align="center" color="text.secondary" mb={4}>Sign in to your account</Typography>
         
-        <Box component="form" onSubmit={handleLogin} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Box component="form" onSubmit={handleLogin}>
           <TextField 
-            label="Email or Staff ID" 
-            variant="outlined" 
             fullWidth 
-            required 
+            label="Email Address" 
+            variant="outlined" 
+            margin="normal"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            disabled={isLoading}
           />
           <TextField 
+            fullWidth 
             label="Password" 
             type="password" 
             variant="outlined" 
-            fullWidth 
-            required 
+            margin="normal"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            disabled={isLoading}
           />
-          {error && <Typography color="error" variant="body2" textAlign="center">Invalid credentials</Typography>}
+          
+          {error && <Typography color="error" variant="body2" align="center">Invalid credentials</Typography>}
           
           <Button 
             type="submit" 

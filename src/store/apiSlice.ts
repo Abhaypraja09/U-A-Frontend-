@@ -127,13 +127,41 @@ export const apiSlice = createApi({
       query: (body) => ({ url: '/machine-logs/clock-in', method: 'POST', body }),
       invalidatesTags: ['Production', 'Attendance']
     }),
+    machineClockOut: builder.mutation<any, any>({
+      query: (body) => ({ url: '/machine-logs/clock-out', method: 'POST', body }),
+      invalidatesTags: ['Production', 'Attendance']
+    }),
+    getDailyMachineLogs: builder.query<any[], void>({
+      query: () => '/machine-logs/daily-logs',
+      providesTags: ['Attendance', 'Production']
+    }),
+    approveMachineLog: builder.mutation<any, { id: string, projectId: string }>({
+      query: ({ id, projectId }) => ({ url: `/machine-logs/approve/${id}`, method: 'PUT', body: { projectId } }),
+      invalidatesTags: ['Production', 'Attendance']
+    }),
+    rejectMachineLog: builder.mutation<any, string>({
+      query: (id) => ({ url: `/machine-logs/reject/${id}`, method: 'PUT' }),
+      invalidatesTags: ['Production', 'Attendance']
+    }),
     getWorkOrders: builder.query<any[], void>({
       query: () => '/production/work-orders',
+      providesTags: ['Production']
+    }),
+    getMachineLogs: builder.query<any[], void>({
+      query: () => '/machine-logs',
       providesTags: ['Production']
     }),
     getStaffSalary: builder.query<any[], void>({
       query: () => '/hr/staff-salary',
       providesTags: ['Attendance'],
+    }),
+    getStaffList: builder.query<any[], void>({
+      query: () => '/hr/staff',
+      providesTags: ['Attendance'],
+    }),
+    deleteStaff: builder.mutation<any, string>({
+      query: (id) => ({ url: `/hr/staff/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['Attendance', 'Production']
     }),
 
     getCategories: builder.query<any[], void>({
@@ -202,6 +230,26 @@ export const apiSlice = createApi({
     createProductionLog: builder.mutation<any, Partial<any>>({
       query: (body) => ({ url: '/production', method: 'POST', body }),
       invalidatesTags: ['Production']
+    }),
+    createMaterialLog: builder.mutation<any, Partial<any>>({
+      query: (body) => ({ url: '/production/material-log', method: 'POST', body }),
+      invalidatesTags: ['Production']
+    }),
+    getPendingApprovals: builder.query<any[], void>({
+      query: () => '/production/pending-approvals',
+      providesTags: ['Production']
+    }),
+    approveMaterialLog: builder.mutation<any, { id: string; data: any }>({
+      query: ({ id, data }) => ({
+        url: `/production/${id}/approve`,
+        method: 'PATCH',
+        body: data,
+      }),
+      invalidatesTags: ['Production', 'Project']
+    }),
+    getApprovedLogs: builder.query<any[], void>({
+      query: () => '/production/approved-logs',
+      providesTags: ['Production']
     }),
     getProjectProductionLogs: builder.query<any[], string>({
       query: (projectId) => `/production/project/${projectId}`,
@@ -296,6 +344,11 @@ export const {
   usePunchOutMutation,
   useGetActiveSessionQuery,
   useMachineClockInMutation,
+  useMachineClockOutMutation,
+  useGetDailyMachineLogsQuery,
+  useApproveMachineLogMutation,
+  useRejectMachineLogMutation,
+  useGetMachineLogsQuery,
   useGetWorkOrdersQuery,
   useGetDispatchesQuery,
   useCreateDispatchMutation,
@@ -314,5 +367,11 @@ export const {
   useReserveProjectMaterialMutation,
   useCreateQuotationMutation,
   useGetProjectProductionLogsQuery,
-  useDeleteProjectMutation
+  useDeleteProjectMutation,
+  useGetStaffListQuery,
+  useDeleteStaffMutation,
+  useCreateMaterialLogMutation,
+  useGetPendingApprovalsQuery,
+  useApproveMaterialLogMutation,
+  useGetApprovedLogsQuery
 } = apiSlice;

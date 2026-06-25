@@ -12,6 +12,9 @@ import { NavLink } from 'react-router-dom';
 import GroupsIcon from '@mui/icons-material/Groups';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import LiveTvIcon from '@mui/icons-material/LiveTv';
+import PendingActionsIcon from '@mui/icons-material/PendingActions';
+import EngineeringIcon from '@mui/icons-material/Engineering';
+import GroupIcon from '@mui/icons-material/Group';
 
 interface SidebarProps {
   mobileOpen: boolean;
@@ -24,7 +27,10 @@ const menuItems = [
   { text: 'Live Feed', icon: <LiveTvIcon />, path: '/live-feed' },
   { text: 'Enquiries Pipeline', icon: <FilterAltIcon />, path: '/crm' },
   { text: 'Active Work Orders', icon: <WorkIcon />, path: '/projects' },
+  { text: 'Approvals', icon: <PendingActionsIcon />, path: '/approvals' },
   { text: 'Machine Master', icon: <PrecisionManufacturingIcon />, path: '/machines' },
+  { text: 'Worker Dashboard', icon: <EngineeringIcon />, path: '/worker-dashboard' },
+  { text: 'Factory Attendance', icon: <GroupIcon />, path: '/attendance-dashboard' },
   { text: 'Production Log', icon: <ReceiptLongIcon />, path: '/production' },
   { text: 'Inventory', icon: <InventoryIcon />, path: '/inventory' },
   { text: 'Accounts', icon: <AttachMoneyIcon />, path: '/accounts' },
@@ -109,7 +115,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, handleDrawerToggle, drawe
         ModalProps={{ keepMounted: true }}
         sx={{
           display: { xs: 'block', sm: 'none' },
-          '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth, borderRight: 'none' },
+          '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth, borderRight: 'none', backgroundColor: '#2A2A2A' },
         }}
       >
         {drawer}
@@ -118,7 +124,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, handleDrawerToggle, drawe
         variant="permanent"
         sx={{
           display: { xs: 'none', sm: 'block' },
-          '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth, borderRight: 'none' },
+          '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth, borderRight: 'none', backgroundColor: '#2A2A2A' },
         }}
         open
       >

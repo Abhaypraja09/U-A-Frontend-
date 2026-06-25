@@ -19,7 +19,7 @@ import {
   useGetProjectProductionLogsQuery, useCreateProductionLogMutation, useUpdateProductionLogMutation,
   useGetInventoryQuery, useGetCategoriesQuery, useCreateCategoryMutation, useDeleteCategoryMutation,
   useGetUnitsQuery, useCreateUnitMutation, useDeleteUnitMutation,
-  useDeleteDrawingMutation, useUpdateDrawingMutation
+  useDeleteDrawingMutation, useUpdateDrawingMutation, useGetMachineLogsQuery
 } from '../store/apiSlice';
 import { generateReceiptPDF, generateWorkOrderPDF, generateQuotationPDF } from '../utils/pdfGenerator';
 
@@ -48,6 +48,8 @@ const ProjectDetails: React.FC = () => {
   const [createProductionLog] = useCreateProductionLogMutation();
   const [updateProductionLog] = useUpdateProductionLogMutation();
   const { data: inventoryItems } = useGetInventoryQuery();
+  const { data: allMachineLogs, isLoading: machineLogsLoading } = useGetMachineLogsQuery();
+  const projectMachineLogs = allMachineLogs?.filter((log: any) => log.projectId === id) || [];
 
   const [activeStep, setActiveStep] = useState(0);
   const [viewingStepOverride, setViewingStepOverride] = useState<number | null>(null);
@@ -505,7 +507,7 @@ const ProjectDetails: React.FC = () => {
     : (isCrmView ? Math.min(3, activeStep) : Math.max(4, activeStep));
 
   return (
-    <Box sx={{ maxWidth: 1536, mx: 'auto', px: { xs: 2, md: 4 } }}>
+    <Box sx={{ width: '100%', px: { xs: 2, md: 4 } }}>
       <Button 
         startIcon={<ArrowBackIcon />} 
         onClick={() => navigate(-1)} 
@@ -515,62 +517,10 @@ const ProjectDetails: React.FC = () => {
         Back to Pipeline
       </Button>
 
-
       
       <Box sx={{ display: 'flex', gap: 4, flexDirection: { xs: 'column', md: 'row' }, alignItems: 'flex-start' }}>
         {/* LEFT MAIN COLUMN */}
         <Box sx={{ flex: 1, width: '100%', minWidth: 0 }}>
-          {/* HEADER CARD */}
-          <Paper elevation={0} sx={{ 
-            p: 4, mb: 4, 
-            background: 'linear-gradient(135deg, #FFFFFF 0%, #FFFDF5 100%)',
-            border: '1px solid', borderColor: '#E8E1D5', 
-            borderRadius: 4,
-            boxShadow: '0px 4px 20px rgba(0, 0, 0, 0.03)'
-          }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                <Box sx={{ width: 56, height: 56, borderRadius: 3, bgcolor: '#F7F3EB', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#B38B36' }}>
-                  <FolderSpecialIcon fontSize="large" />
-                </Box>
-                <Box>
-                  <Typography variant="h4" fontWeight="800" color="text.primary" sx={{ mb: 0.5 }}>{project.name}</Typography>
-                  <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                    {project.projectId} • Client: {project.clientName}
-                  </Typography>
-                </Box>
-              </Box>
-              <Chip 
-                label={project.status.toUpperCase().replace('_', ' ')} 
-                sx={{ 
-                  fontWeight: 700, 
-                  px: 1, 
-                  bgcolor: isProjectActive ? '#E8F5E9' : '#FFF4E5',
-                  color: isProjectActive ? '#2E7D32' : '#B38B36',
-                  border: '1px solid',
-                  borderColor: isProjectActive ? '#C8E6C9' : '#FFE0B2'
-                }} 
-              />
-            </Box>
-          </Paper>
-
-          {/* STEPPER */}
-          <Paper elevation={0} sx={{ p: 4, mb: 4, border: '1px solid', borderColor: '#E8E1D5', borderRadius: 4, boxShadow: '0px 4px 20px rgba(0, 0, 0, 0.02)' }}>
-            <Stepper activeStep={displayActiveStep} alternativeLabel>
-              {currentSteps.map((label, index) => {
-                return (
-                  <Step key={label}>
-                    <StepLabel sx={{ '& .MuiStepIcon-root': { color: displayActiveStep >= index ? '#B38B36 !important' : '#E0E0E0' } }}>
-                      <Typography sx={{ fontWeight: displayActiveStep === index ? 700 : 500, color: displayActiveStep === index ? 'text.primary' : 'text.secondary' }}>
-                        {label}
-                      </Typography>
-                    </StepLabel>
-                  </Step>
-                );
-              })}
-            </Stepper>
-          </Paper>
-
           {/* CONTENT AREA */}
           <Box sx={{ minHeight: 400 }}>
             
@@ -773,7 +723,7 @@ const ProjectDetails: React.FC = () => {
                     type="date"
                     value={designFinalizedDate}
                     onChange={(e) => setDesignFinalizedDate(e.target.value)}
-                    InputLabelProps={{ shrink: true }}
+                    slotProps={{ inputLabel: { shrink: true } }}
                     fullWidth
                   />
                 </Box>
@@ -998,7 +948,7 @@ const ProjectDetails: React.FC = () => {
                     label="Payment Date"
                     value={paymentDate}
                     onChange={(e) => setPaymentDate(e.target.value)}
-                    InputLabelProps={{ shrink: true }}
+                    slotProps={{ inputLabel: { shrink: true } }}
                     sx={{ width: 200, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                   />
                   
@@ -1231,54 +1181,128 @@ const ProjectDetails: React.FC = () => {
 
             {/* STEP 6: PRODUCTION MANAGEMENT */}
             {stepToRender === 6 && (
-              <Paper elevation={0} sx={{ p: 5, border: '1px solid', borderColor: '#E8E1D5', borderRadius: 4, boxShadow: '0px 4px 20px rgba(0, 0, 0, 0.02)' }}>
-                <Typography variant="h5" fontWeight="bold" mb={4} color="text.primary">Production Management</Typography>
-                <Typography variant="body2" color="text.secondary" mb={4}>Track and update the live status of production stages.</Typography>
-
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 4 }}>
-                  {['Cutting', 'CNC Carving', 'Inlay Work', 'Hand Carving', 'Polishing', 'Finishing', 'Assembly', 'Packing Preparation'].map(stage => {
-                    const log = productionLogs?.find((l: any) => l.stage === stage);
-                    const isStarted = !!log;
-                    const isCompleted = log?.status === 'completed';
-
-                    return (
-                      <Box key={stage} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 2, border: '1px solid #EEE', borderRadius: 2 }}>
-                        <Box>
-                          <Typography variant="subtitle1" fontWeight="bold">{stage}</Typography>
-                          {isStarted && <Typography variant="caption" color={isCompleted ? 'success.main' : 'warning.main'}>{isCompleted ? 'Completed' : 'In Progress'}</Typography>}
-                        </Box>
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                          {!isStarted && (
-                            <Button variant="outlined" size="small" onClick={async () => {
-                              await createProductionLog({ projectId: id, stage }).unwrap();
-                              refetchProduction();
-                            }}>Start Stage</Button>
-                          )}
-                          {isStarted && !isCompleted && (
-                            <Button variant="contained" color="success" size="small" onClick={async () => {
-                              await updateProductionLog({ id: log.id, data: { remarks: 'Done' } }).unwrap();
-                              refetchProduction();
-                            }}>Mark Complete</Button>
-                          )}
-                        </Box>
-                      </Box>
-                    );
-                  })}
-                </Box>
-
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Button variant="outlined" size="large" onClick={() => {
+              <Paper elevation={0} sx={{ p: { xs: 3, md: 5 }, border: '1px solid', borderColor: '#E8E1D5', borderRadius: 4, boxShadow: '0px 4px 20px rgba(0, 0, 0, 0.02)' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 4 }}>
+                  <Box>
+                    <Typography variant="h5" fontWeight="bold" color="text.primary">Production Management</Typography>
+                    <Typography variant="body2" color="text.secondary">Live tracking of machine logs and worker reports for this project.</Typography>
+                  </Box>
+                  <Button variant="outlined" size="small" onClick={() => {
                     if (viewingStepOverride !== null) setViewingStepOverride(null);
                     else handleNextStage('material_planning');
-                  }} sx={{ px: 4, py: 1.5, borderRadius: 2 }}>
-                    Back
+                  }} sx={{ borderRadius: 2 }}>
+                    Go Back
                   </Button>
+                </Box>
+
+                <Box sx={{ mb: 6 }}>
+                  <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: '#E8E1D5', borderRadius: 3, overflow: 'hidden' }}>
+                    <Table>
+                      <TableHead sx={{ bgcolor: '#FDFBF7' }}>
+                        <TableRow>
+                          <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2 }}>Machine Name</TableCell>
+                          <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2 }}>Operator</TableCell>
+                          <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2 }}>Punch In</TableCell>
+                          <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2 }}>Punch Out</TableCell>
+                          <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2 }}>Total Hours</TableCell>
+                          <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2 }}>Status</TableCell>
+                          <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2 }}>Work Report</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {machineLogsLoading ? (
+                          <TableRow><TableCell colSpan={7} align="center" sx={{ py: 5 }}>Loading...</TableCell></TableRow>
+                        ) : projectMachineLogs.length === 0 ? (
+                          <TableRow><TableCell colSpan={7} align="center" sx={{ py: 5, color: 'text.secondary' }}>No machine logs for this project yet.</TableCell></TableRow>
+                        ) : projectMachineLogs.map((log: any, idx: number) => (
+                          <TableRow key={log.id} sx={{ bgcolor: idx % 2 === 0 ? '#FFFFFF' : '#FAFAFA', '&:hover': { bgcolor: '#F0F7F0' } }}>
+                            <TableCell sx={{ fontWeight: 500 }}>{log.machine?.name}</TableCell>
+                            <TableCell>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Avatar sx={{ width: 24, height: 24, bgcolor: 'primary.light', fontSize: '0.8rem' }}>
+                                  {log.operator?.name?.charAt(0) || '?'}
+                                </Avatar>
+                                {log.operator?.name || 'N/A'}
+                              </Box>
+                            </TableCell>
+                            <TableCell sx={{ color: 'text.secondary' }}>{new Date(log.startTime).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })}</TableCell>
+                            <TableCell sx={{ color: 'text.secondary' }}>{log.endTime ? new Date(log.endTime).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' }) : '-'}</TableCell>
+                            <TableCell sx={{ fontWeight: 'bold', color: '#2E7D32' }}>
+                              {log.endTime 
+                                ? ((new Date(log.endTime).getTime() - new Date(log.startTime).getTime()) / (1000 * 60 * 60)).toFixed(2) + 'h'
+                                : '-'}
+                            </TableCell>
+                            <TableCell>
+                              <Chip 
+                                label={log.status.toUpperCase()} 
+                                color={log.status === 'active' ? 'warning' : 'success'} 
+                                size="small" 
+                                variant={log.status === 'active' ? 'filled' : 'outlined'}
+                                sx={{ fontWeight: 'bold', fontSize: '0.7rem' }} 
+                              />
+                            </TableCell>
+                            <TableCell sx={{ maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={log.remarks || ''}>
+                              {log.remarks || '-'}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Box>
+
+                <Box sx={{ mb: 6 }}>
+                  <Typography variant="h6" mb={2}>Approved Material Logs</Typography>
+                  <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: '#E8E1D5', borderRadius: 3, overflow: 'hidden' }}>
+                    <Table>
+                      <TableHead sx={{ bgcolor: '#FDFBF7' }}>
+                        <TableRow>
+                          <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2 }}>Transaction</TableCell>
+                          <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2 }}>Stage</TableCell>
+                          <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2 }}>Worker / Vendor</TableCell>
+                          <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2 }}>Qty</TableCell>
+                          <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2 }}>Date Approved</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {(!productionLogs || productionLogs.filter((l: any) => l.approvalStatus === 'approved').length === 0) ? (
+                          <TableRow><TableCell colSpan={5} align="center" sx={{ py: 5, color: 'text.secondary' }}>No approved material logs yet.</TableCell></TableRow>
+                        ) : productionLogs.filter((l: any) => l.approvalStatus === 'approved').map((log: any, idx: number) => (
+                          <TableRow key={log.id} sx={{ bgcolor: idx % 2 === 0 ? '#FFFFFF' : '#FAFAFA', '&:hover': { bgcolor: '#F0F7F0' } }}>
+                            <TableCell>
+                              <Chip 
+                                label={log.transactionType === 'OUT' ? 'OUT' : 'IN'} 
+                                color={log.transactionType === 'OUT' ? 'warning' : 'info'} 
+                                size="small" 
+                                sx={{ fontWeight: 'bold', fontSize: '0.7rem' }} 
+                              />
+                            </TableCell>
+                            <TableCell>{log.stage}</TableCell>
+                            <TableCell>
+                              {log.vendorName ? (
+                                <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'secondary.main' }}>
+                                  {log.vendorName} (Vendor)
+                                </Typography>
+                              ) : (
+                                log.worker?.name || 'Unknown'
+                              )}
+                            </TableCell>
+                            <TableCell sx={{ fontWeight: 'bold' }}>{log.quantityProduced}</TableCell>
+                            <TableCell sx={{ color: 'text.secondary' }}>{new Date(log.updatedAt).toLocaleDateString()}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Box>
+
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
                   <Button variant="contained" color="success" size="large" onClick={async () => {
                     await updateProject({ id: id as string, data: { status: 'work_order' } }).unwrap();
                     setActiveStep(7);
                     setViewingStepOverride(null);
                     refetch();
-                  }} sx={{ px: 4, py: 1.5, borderRadius: 2, bgcolor: '#2E7D32', '&:hover': { bgcolor: '#1B5E20' } }}>
+                  }} sx={{ px: 5, py: 1.5, borderRadius: 2, bgcolor: '#2E7D32', '&:hover': { bgcolor: '#1B5E20' }, fontWeight: 'bold', fontSize: '1.1rem' }}>
                     Finalize & Send to Dispatch
                   </Button>
                 </Box>
@@ -1312,8 +1336,9 @@ const ProjectDetails: React.FC = () => {
         </Box> {/* End of LEFT MAIN COLUMN */}
 
         {/* RIGHT SIDEBAR TIMELINE */}
-        <Box sx={{ width: { xs: '100%', md: 350 }, flexShrink: 0 }}>
-          <Paper elevation={0} sx={{ p: 4, border: '1px solid', borderColor: '#E8E1D5', borderRadius: 4, position: 'sticky', top: 24, boxShadow: '0px 4px 20px rgba(0, 0, 0, 0.02)' }}>
+        {stepToRender !== 6 && (
+          <Box sx={{ width: { xs: '100%', md: 350 }, flexShrink: 0 }}>
+            <Paper elevation={0} sx={{ p: 4, border: '1px solid', borderColor: '#E8E1D5', borderRadius: 4, position: 'sticky', top: 24, boxShadow: '0px 4px 20px rgba(0, 0, 0, 0.02)' }}>
             <Typography variant="h6" fontWeight="bold" mb={3} color="text.primary">Activity Log</Typography>
             
             <Stepper orientation="vertical" activeStep={displayActiveStep} sx={{ '& .MuiStepConnector-line': { minHeight: 40 } }}>
@@ -1353,6 +1378,7 @@ const ProjectDetails: React.FC = () => {
             </Stepper>
           </Paper>
         </Box>
+        )}
 
       </Box>
 
@@ -1412,7 +1438,7 @@ const ProjectDetails: React.FC = () => {
             fullWidth 
             value={editFormData.createdAt}
             onChange={(e) => setEditFormData({...editFormData, createdAt: e.target.value})}
-            InputLabelProps={{ shrink: true }}
+            slotProps={{ inputLabel: { shrink: true } }}
           />
           <TextField 
             label="Project / Enquiry Title" 

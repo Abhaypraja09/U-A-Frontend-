@@ -90,40 +90,50 @@ const Topbar: React.FC<TopbarProps> = ({ handleDrawerToggle, drawerWidth }) => {
                 }} sx={{ fontWeight: 'bold', color: 'primary.main' }}>
                   <ListItemText primary={pageType === 'crm' ? "← Back to Pipeline" : "← Back to Projects"} />
                 </MenuItem>
-                <Divider />
-                {/* CRM/Enquiry stages always go to /crm/:id?view=... */}
-                <MenuItem onClick={() => {
-                  handleMenuClose();
-                  navigate(`/crm/${projectId}?view=0`);
-                }}>
+                
+                <Divider textAlign="left"><Typography variant="caption" color="textSecondary" fontWeight="bold">CRM Details</Typography></Divider>
+                <MenuItem onClick={() => { handleMenuClose(); navigate(`/crm/${projectId}?view=0`); }}>
                   <ListItemText primary="View Enquiry Details" />
                 </MenuItem>
-                <MenuItem onClick={() => {
-                  handleMenuClose();
-                  navigate(`/crm/${projectId}?view=1`);
-                }}>
+                <MenuItem onClick={() => { handleMenuClose(); navigate(`/crm/${projectId}?view=1`); }}>
                   <ListItemText primary="View Reference Design" />
                 </MenuItem>
-                <MenuItem onClick={() => {
-                  handleMenuClose();
-                  navigate(`/crm/${projectId}?view=2`);
-                }}>
+                <MenuItem onClick={() => { handleMenuClose(); navigate(`/crm/${projectId}?view=2`); }}>
                   <ListItemText primary="View Costing" />
                 </MenuItem>
-                <MenuItem onClick={() => {
-                  handleMenuClose();
-                  navigate(`/crm/${projectId}?view=3`);
-                }}>
+                <MenuItem onClick={() => { handleMenuClose(); navigate(`/crm/${projectId}?view=3`); }}>
                   <ListItemText primary="View Advance Payment" />
                 </MenuItem>
+
+                {isProjectActive && (
+                  <>
+                    <Divider textAlign="left"><Typography variant="caption" color="textSecondary" fontWeight="bold">Project Details</Typography></Divider>
+                    <MenuItem onClick={() => { handleMenuClose(); navigate(`/projects/${projectId}?view=4`); }}>
+                      <ListItemText primary="Shop Drawing & Approval" />
+                    </MenuItem>
+                    <MenuItem onClick={() => { handleMenuClose(); navigate(`/projects/${projectId}?view=5`); }}>
+                      <ListItemText primary="Material Planning" />
+                    </MenuItem>
+                    <MenuItem onClick={() => { handleMenuClose(); navigate(`/projects/${projectId}?view=6`); }}>
+                      <ListItemText primary="Production" />
+                    </MenuItem>
+                    <MenuItem onClick={() => { handleMenuClose(); navigate(`/projects/${projectId}?view=7`); }}>
+                      <ListItemText primary="Work Order Active" />
+                    </MenuItem>
+                  </>
+                )}
+
                 {/* Back to Active Step goes to /projects/:id if active, else /crm/:id */}
                 {location.search.includes('view=') && (
-                  <MenuItem onClick={() => {
-                    handleMenuClose();
-                    navigate(isProjectActive ? `/projects/${projectId}` : `/crm/${projectId}`);
-                  }} sx={{ color: 'secondary.main', fontWeight: 'bold' }}>
-                    <ListItemText primary="Back to Active Step" />
-                  </MenuItem>
+                  <>
+                    <Divider />
+                    <MenuItem onClick={() => {
+                      handleMenuClose();
+                      navigate(isProjectActive ? `/projects/${projectId}` : `/crm/${projectId}`);
+                    }} sx={{ color: 'secondary.main', fontWeight: 'bold' }}>
+                      <ListItemText primary="Back to Active Step" />
+                    </MenuItem>
+                  </>
                 )}
                 <Divider />
               </>

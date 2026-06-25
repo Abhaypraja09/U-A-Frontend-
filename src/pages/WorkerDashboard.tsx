@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Box, Typography, Button, Paper, TextField, MenuItem, CircularProgress, Alert, Snackbar, Divider, Avatar } from '@mui/material';
-import { useGetMachinesQuery, useGetProjectsQuery, usePunchInMutation, usePunchOutMutation, useGetActiveSessionQuery, useMachineClockInMutation } from '../store/apiSlice';
+import { Box, Typography, Button, Paper, TextField, MenuItem, CircularProgress, Alert, Snackbar, Divider, Avatar, Dialog, DialogTitle, DialogContent, DialogActions, IconButton, Chip } from '@mui/material';
+import { useGetMachinesQuery, usePunchInMutation, usePunchOutMutation, useGetActiveSessionQuery, useMachineClockInMutation, useGetDailyMachineLogsQuery, useMachineClockOutMutation, useCreateMaterialLogMutation, useGetStaffListQuery } from '../store/apiSlice';
 import { useDispatch, useSelector } from 'react-redux';
 import { logout } from '../store/authSlice';
 import { useNavigate } from 'react-router-dom';
@@ -10,44 +10,28 @@ import LoginIcon from '@mui/icons-material/Login';
 import LogoutIcon from '@mui/icons-material/Logout';
 import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturing';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import CloseIcon from '@mui/icons-material/Close';
+import CancelIcon from '@mui/icons-material/Cancel';
+import OutputIcon from '@mui/icons-material/Output';
+import InputIcon from '@mui/icons-material/Input';
+import InventoryIcon from '@mui/icons-material/Inventory';
 
-const ImageUploadBox = ({ label, onImageSelected }: { label: string, onImageSelected: (url: string) => void }) => {
-  const [preview, setPreview] = useState<string | null>(null);
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const url = URL.createObjectURL(file);
-      setPreview(url);
-      onImageSelected(url);
-    }
-  };
-
+const ImageUploadBox = ({ label, previewUrl, onClick }: { label: string, previewUrl: string, onClick: () => void }) => {
   return (
     <Box sx={{ flex: 1, minWidth: 100, textAlign: 'center' }}>
       <Box 
-        component="label" 
+        onClick={onClick}
         sx={{ 
-          display: 'flex', 
-          flexDirection: 'column', 
-          alignItems: 'center', 
-          justifyContent: 'center',
-          height: 120, 
-          border: '2px dashed', 
-          borderColor: preview ? 'success.main' : 'divider',
-          borderRadius: 3,
-          bgcolor: preview ? 'success.light' : 'rgba(0,0,0,0.02)',
-          cursor: 'pointer',
-          overflow: 'hidden',
-          position: 'relative',
-          transition: 'all 0.2s',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          height: 120, border: '2px dashed', borderColor: previewUrl ? 'success.main' : 'divider',
+          borderRadius: 3, bgcolor: previewUrl ? 'success.light' : 'rgba(0,0,0,0.02)',
+          cursor: 'pointer', overflow: 'hidden', position: 'relative', transition: 'all 0.2s',
           '&:hover': { bgcolor: 'rgba(0,0,0,0.05)' }
         }}
       >
-        <input type="file" hidden accept="image/*" onChange={handleFileChange} />
-        {preview ? (
+        {previewUrl ? (
           <>
-            <img src={preview} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            <img src={previewUrl} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             <Box sx={{ position: 'absolute', top: 5, right: 5, bgcolor: 'success.main', borderRadius: '50%', width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <CheckCircleIcon sx={{ color: 'white', fontSize: 16 }} />
             </Box>
@@ -55,7 +39,7 @@ const ImageUploadBox = ({ label, onImageSelected }: { label: string, onImageSele
         ) : (
           <>
             <PhotoCameraIcon sx={{ fontSize: 32, color: 'text.secondary', mb: 1 }} />
-            <Typography variant="caption" color="textSecondary" fontWeight="bold">TAP TO UPLOAD</Typography>
+            <Typography variant="caption" color="textSecondary" fontWeight="bold">TAP TO CAPTURE</Typography>
           </>
         )}
       </Box>
@@ -69,21 +53,100 @@ const ImageUploadBox = ({ label, onImageSelected }: { label: string, onImageSele
 const WorkerDashboard: React.FC = () => {
   const user = useSelector((state: any) => state.auth.user);
   const { data: machines, isLoading: machinesLoading } = useGetMachinesQuery();
-  const { data: projects, isLoading: projectsLoading } = useGetProjectsQuery();
   const { data: activeSession, isLoading: sessionLoading, refetch } = useGetActiveSessionQuery();
   
   const [punchIn, { isLoading: punchingIn }] = usePunchInMutation();
   const [punchOut, { isLoading: punchingOut }] = usePunchOutMutation();
   const [machineClockIn, { isLoading: clockingIn }] = useMachineClockInMutation();
+  const [machineClockOut, { isLoading: clockingOut }] = useMachineClockOutMutation();
+  const [createMaterialLog, { isLoading: creatingMaterial }] = useCreateMaterialLogMutation();
+  const { data: activeMachineLogs, refetch: refetchMachineLogs } = useGetDailyMachineLogsQuery();
+  const { data: staffList } = useGetStaffListQuery();
   
   const [selectedMachine, setSelectedMachine] = useState('');
-  const [selectedProject, setSelectedProject] = useState('');
   const [photos, setPhotos] = useState({ machine: '', unit: '', software: '' });
+  const [startMachineDialogOpen, setStartMachineDialogOpen] = useState(false);
   
+  const [selectedEndMachine, setSelectedEndMachine] = useState('');
+  const [endPhotos, setEndPhotos] = useState({ machine: '', unit: '', software: '' });
+  const [endRemarks, setEndRemarks] = useState('');
+  const [endMachineDialogOpen, setEndMachineDialogOpen] = useState(false);
+  
+  const [attendancePhoto, setAttendancePhoto] = useState('');
+  
+  // Material Tracking State
+  const [materialDialogOpen, setMaterialDialogOpen] = useState(false);
+  const [materialType, setMaterialType] = useState<'OUT' | 'IN'>('OUT');
+  const [materialStage, setMaterialStage] = useState('');
+  const [materialQuantity, setMaterialQuantity] = useState('');
+  const [materialPhotos, setMaterialPhotos] = useState({ machine: '', unit: '', software: '' });
+  const [assigneeType, setAssigneeType] = useState<'self'|'worker'|'vendor'>('self');
+  const [selectedStaffId, setSelectedStaffId] = useState('');
+  const [vendorName, setVendorName] = useState('');
+
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' as 'success'|'error' });
+  
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [cameraTarget, setCameraTarget] = useState('');
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
   
   const dispatch = useDispatch();
   const navigate = useNavigate();
+
+  React.useEffect(() => {
+    return () => {
+      if (stream) stream.getTracks().forEach(track => track.stop());
+    };
+  }, [stream]);
+
+  const startCamera = async (target: string) => {
+    setCameraTarget(target);
+    setIsCameraOpen(true);
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      setStream(mediaStream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+      }
+    } catch (err) {
+      console.error("Camera error:", err);
+      showToast("Could not access camera", 'error');
+      setIsCameraOpen(false);
+    }
+  };
+
+  const stopCamera = () => {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+    }
+    setIsCameraOpen(false);
+    setStream(null);
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const context = canvasRef.current.getContext('2d');
+      canvasRef.current.width = videoRef.current.videoWidth;
+      canvasRef.current.height = videoRef.current.videoHeight;
+      context?.drawImage(videoRef.current, 0, 0);
+      const dataUrl = canvasRef.current.toDataURL('image/jpeg', 0.8);
+      
+      if (cameraTarget === 'attendance') setAttendancePhoto(dataUrl);
+      else if (cameraTarget.startsWith('end_')) {
+        const key = cameraTarget.replace('end_', '');
+        setEndPhotos(prev => ({ ...prev, [key]: dataUrl }));
+      }
+      else if (cameraTarget.startsWith('mat_')) {
+        const key = cameraTarget.replace('mat_', '');
+        setMaterialPhotos(prev => ({ ...prev, [key]: dataUrl }));
+      }
+      else setPhotos(prev => ({ ...prev, [cameraTarget]: dataUrl }));
+      
+      stopCamera();
+    }
+  };
 
   const showToast = (message: string, severity: 'success'|'error' = 'success') => {
     setToast({ open: true, message, severity });
@@ -91,39 +154,31 @@ const WorkerDashboard: React.FC = () => {
 
   const handlePunchIn = async () => {
     try {
-      await punchIn({ gpsLocation: "28.7, 77.1", photoUrl: "https://example.com/staff-photo.jpg" }).unwrap();
+      await punchIn({ gpsLocation: 'Factory', photoUrl: attendancePhoto }).unwrap();
       showToast("Shift Started successfully! You are now Punched In.");
       refetch();
     } catch (err: any) {
-      showToast(err.data?.message || "Failed to Punch In. Please try again.", 'error');
+      showToast(err.data?.message || "Failed to Punch In.", 'error');
       console.error(err);
     }
   };
 
   const handleMachineClockIn = async () => {
-    if (!selectedMachine) return showToast("Please select a machine", 'error');
-    if (!selectedProject) return showToast("Please select a project/stone", 'error');
-    if (!photos.machine || !photos.unit || !photos.software) {
-      return showToast("Please upload all 3 mandatory photos", 'error');
-    }
-    
     try {
       await machineClockIn({ 
         machineId: selectedMachine, 
-        projectId: selectedProject,
         machinePhotoUrl: photos.machine,
         unitPhotoUrl: photos.unit,
         softwarePhotoUrl: photos.software,
+        remarks: ''
       }).unwrap();
-      showToast("Machine Log started! Check Live Feed.");
-      // Reset form
+      showToast("Machine Log started successfully!");
       setSelectedMachine('');
-      setSelectedProject('');
       setPhotos({ machine: '', unit: '', software: '' });
-      refetch();
+      setStartMachineDialogOpen(false);
+      refetchMachineLogs();
     } catch (err: any) {
       showToast(err.data?.message || "Failed to start machine log.", 'error');
-      console.error(err);
     }
   };
 
@@ -135,6 +190,54 @@ const WorkerDashboard: React.FC = () => {
     } catch (err: any) {
       showToast(err.data?.message || "Failed to Punch Out.", 'error');
       console.error(err);
+    }
+  };
+
+  const handleMachineClockOut = async () => {
+    try {
+      await machineClockOut({ 
+        logId: selectedEndMachine, 
+        remarks: endRemarks,
+        endMachinePhotoUrl: endPhotos.machine,
+        endUnitPhotoUrl: endPhotos.unit,
+        endSoftwarePhotoUrl: endPhotos.software
+      }).unwrap();
+      showToast("Machine Log ended successfully!");
+      setSelectedEndMachine('');
+      setEndRemarks('');
+      setEndPhotos({ machine: '', unit: '', software: '' });
+      setEndMachineDialogOpen(false);
+      refetchMachineLogs();
+    } catch (err: any) {
+      showToast(err.data?.message || "Failed to end machine log.", 'error');
+    }
+  };
+
+  const handleOpenMaterialDialog = (type: 'OUT' | 'IN') => {
+    setMaterialType(type);
+    setMaterialStage('');
+    setMaterialQuantity('');
+    setMaterialPhotos({ machine: '', unit: '', software: '' });
+    setAssigneeType('self');
+    setSelectedStaffId('');
+    setVendorName('');
+    setMaterialDialogOpen(true);
+  };
+
+  const handleMaterialSubmit = async () => {
+    try {
+      await createMaterialLog({
+        stage: materialStage,
+        quantityProduced: materialQuantity,
+        transactionType: materialType,
+        startPhotos: materialPhotos,
+        workerId: assigneeType === 'self' ? user?.id : (assigneeType === 'worker' ? selectedStaffId : undefined),
+        vendorName: assigneeType === 'vendor' ? vendorName : undefined
+      }).unwrap();
+      showToast(`Material ${materialType} logged successfully! Waiting for Admin approval.`);
+      setMaterialDialogOpen(false);
+    } catch (err: any) {
+      showToast(err.data?.message || "Failed to submit material log.", 'error');
     }
   };
 
@@ -195,9 +298,14 @@ const WorkerDashboard: React.FC = () => {
             </Box>
           ) : (
             <Box sx={{ textAlign: 'center' }}>
-              <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-                You must punch in to record your daily attendance and start using machines.
+              <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+                You must punch in with a selfie to record your daily attendance.
               </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
+                 <Box sx={{ width: 140 }}>
+                   <ImageUploadBox label="YOUR SELFIE" previewUrl={attendancePhoto} onClick={() => startCamera('attendance')} />
+                 </Box>
+              </Box>
               <Button 
                 variant="contained" 
                 color="success" 
@@ -205,7 +313,7 @@ const WorkerDashboard: React.FC = () => {
                 fullWidth 
                 startIcon={punchingIn ? <CircularProgress size={20} color="inherit" /> : <LoginIcon />}
                 onClick={handlePunchIn}
-                disabled={punchingIn}
+                disabled={punchingIn || !attendancePhoto}
                 sx={{ borderRadius: 3, py: 1.5, fontSize: '1.1rem', fontWeight: 'bold', boxShadow: '0 8px 16px rgba(46,125,50,0.2)' }}
               >
                 {punchingIn ? 'Starting Shift...' : 'START SHIFT (PUNCH IN)'}
@@ -214,64 +322,298 @@ const WorkerDashboard: React.FC = () => {
           )}
         </Paper>
 
-        {/* Step 2: Machine Selection (Only if Punched In) */}
-        <Paper elevation={2} sx={{ p: 3, borderRadius: 4, opacity: activeSession ? 1 : 0.5, pointerEvents: activeSession ? 'auto' : 'none' }}>
-          <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-            <PrecisionManufacturingIcon /> Step 2: Start Machine Work
-          </Typography>
-          <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-            Select your machine, assigned stone/task, and upload the 3 mandatory photos.
-          </Typography>
-          
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            <TextField 
-              select
-              label="1. Select Machine" 
-              fullWidth 
-              value={selectedMachine} 
-              onChange={(e) => setSelectedMachine(e.target.value)} 
-              InputProps={{ sx: { borderRadius: 3 } }}
-            >
-              {machines?.length ? machines.map((m: any) => (
-                <MenuItem key={m.id} value={m.id}>{m.name}</MenuItem>
-              )) : <MenuItem value="" disabled>No machines</MenuItem>}
-            </TextField>
-
-            <TextField 
-              select
-              label="2. Select Task / Stone" 
-              fullWidth 
-              value={selectedProject} 
-              onChange={(e) => setSelectedProject(e.target.value)} 
-              InputProps={{ sx: { borderRadius: 3 } }}
-            >
-              {projects?.filter((p: any) => p.status === 'work_order').map((p: any) => (
-                <MenuItem key={p.id} value={p.id}>{p.projectId} - {p.name}</MenuItem>
+        {/* Active Machine Logs */}
+        {activeMachineLogs && activeMachineLogs.filter((l: any) => l.status === 'active').length > 0 && (
+          <Paper elevation={2} sx={{ p: 3, borderRadius: 4, mb: 4, bgcolor: '#FFFDF5', border: '1px solid #E8E1D5' }}>
+            <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <PrecisionManufacturingIcon /> Active Machine Logs
+            </Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {activeMachineLogs.filter((l: any) => l.status === 'active').map((log: any) => (
+                <Box key={log.id} sx={{ p: 2, bgcolor: '#FFF', borderRadius: 3, border: '1px solid #E8E1D5', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Box>
+                    <Typography variant="subtitle1" fontWeight="bold" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'success.main' }} />
+                      {log.machine?.name}
+                    </Typography>
+                    <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5 }}>Operator: {log.operator?.name || 'Unknown'}</Typography>
+                    {log.project && <Typography variant="body2" color="textSecondary">Project: {log.project?.projectId}</Typography>}
+                    <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 0.5, fontWeight: 'bold' }}>
+                      Started at: {new Date(log.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                    </Typography>
+                  </Box>
+                  <Chip label="IN PROGRESS" size="small" color="success" variant="outlined" sx={{ fontWeight: 'bold' }} />
+                </Box>
               ))}
-            </TextField>
-
-            <Box>
-              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 2 }}>3. Upload Mandatory Photos</Typography>
-              <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', pb: 1 }}>
-                <ImageUploadBox label="MACHINE" onImageSelected={(url) => setPhotos(p => ({ ...p, machine: url }))} />
-                <ImageUploadBox label="STONE/UNIT" onImageSelected={(url) => setPhotos(p => ({ ...p, unit: url }))} />
-                <ImageUploadBox label="SOFTWARE" onImageSelected={(url) => setPhotos(p => ({ ...p, software: url }))} />
-              </Box>
             </Box>
+          </Paper>
+        )}
 
+        {/* Action Buttons for Machine Work */}
+        <Box sx={{ display: 'flex', gap: 2, mb: 4, opacity: activeSession ? 1 : 0.5, pointerEvents: activeSession ? 'auto' : 'none' }}>
+          <Button 
+            variant="contained" 
+            color="success" 
+            size="large" 
+            fullWidth 
+            startIcon={<PrecisionManufacturingIcon />}
+            onClick={() => setStartMachineDialogOpen(true)}
+            sx={{ borderRadius: 4, py: 2, fontSize: '1.2rem', fontWeight: 'bold', boxShadow: '0 8px 24px rgba(46,125,50,0.3)', transition: 'all 0.2s', '&:hover': { transform: 'translateY(-2px)', boxShadow: '0 12px 28px rgba(46,125,50,0.4)' } }}
+          >
+            START MACHINE
+          </Button>
+          <Button 
+            variant="contained" 
+            color="error" 
+            size="large" 
+            fullWidth 
+            startIcon={<CancelIcon />}
+            onClick={() => setEndMachineDialogOpen(true)}
+            disabled={!activeMachineLogs || !activeMachineLogs.some((l: any) => l.status === 'active')}
+            sx={{ borderRadius: 4, py: 2, fontSize: '1.2rem', fontWeight: 'bold', boxShadow: '0 8px 24px rgba(211,47,47,0.3)', transition: 'all 0.2s', '&:hover': { transform: 'translateY(-2px)', boxShadow: '0 12px 28px rgba(211,47,47,0.4)' } }}
+          >
+            END MACHINE
+          </Button>
+        </Box>
+
+        {/* Action Buttons for Material Tracking */}
+        <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, mt: 4, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <InventoryIcon /> Step 3: Material Tracking
+        </Typography>
+        <Divider sx={{ mb: 3 }} />
+        <Box sx={{ display: 'flex', gap: 2, mb: 4, opacity: activeSession ? 1 : 0.5, pointerEvents: activeSession ? 'auto' : 'none' }}>
+          <Button 
+            variant="contained" 
+            color="warning" 
+            size="large" 
+            fullWidth 
+            startIcon={<OutputIcon />}
+            onClick={() => handleOpenMaterialDialog('OUT')}
+            sx={{ borderRadius: 4, py: 2, fontSize: '1rem', fontWeight: 'bold', boxShadow: '0 8px 24px rgba(237,108,2,0.3)', transition: 'all 0.2s', '&:hover': { transform: 'translateY(-2px)' } }}
+          >
+            MATERIAL OUT (TAKE)
+          </Button>
+          <Button 
+            variant="contained" 
+            color="info" 
+            size="large" 
+            fullWidth 
+            startIcon={<InputIcon />}
+            onClick={() => handleOpenMaterialDialog('IN')}
+            sx={{ borderRadius: 4, py: 2, fontSize: '1rem', fontWeight: 'bold', boxShadow: '0 8px 24px rgba(2,136,209,0.3)', transition: 'all 0.2s', '&:hover': { transform: 'translateY(-2px)' } }}
+          >
+            MATERIAL IN (RETURN)
+          </Button>
+        </Box>
+
+        {/* Dialog: Start Machine Work */}
+        <Dialog open={startMachineDialogOpen} onClose={() => setStartMachineDialogOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <PrecisionManufacturingIcon /> Start Machine Work
+          </DialogTitle>
+          <DialogContent dividers>
+            <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+              Select your machine and upload the 3 mandatory photos.
+            </Typography>
+            
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <TextField 
+                select
+                label="1. Select Machine" 
+                fullWidth 
+                value={selectedMachine} 
+                onChange={(e) => setSelectedMachine(e.target.value)} 
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
+              >
+                {machines?.length ? machines.filter((m: any) => !activeMachineLogs?.some((l: any) => l.machineId === m.id && l.status === 'active')).map((m: any) => (
+                  <MenuItem key={m.id} value={m.id}>{m.name}</MenuItem>
+                )) : <MenuItem value="" disabled>No machines available</MenuItem>}
+              </TextField>
+
+              <Box>
+                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 2 }}>2. Upload Mandatory Photos</Typography>
+                <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', pb: 1 }}>
+                  <ImageUploadBox label="MACHINE" previewUrl={photos.machine} onClick={() => startCamera('machine')} />
+                  <ImageUploadBox label="STONE/UNIT" previewUrl={photos.unit} onClick={() => startCamera('unit')} />
+                  <ImageUploadBox label="SOFTWARE" previewUrl={photos.software} onClick={() => startCamera('software')} />
+                </Box>
+              </Box>
+
+            </Box>
+          </DialogContent>
+          <DialogActions sx={{ p: 2 }}>
+            <Button onClick={() => setStartMachineDialogOpen(false)} color="inherit">Cancel</Button>
             <Button 
               variant="contained" 
               color="primary" 
-              size="large" 
-              fullWidth 
               onClick={handleMachineClockIn}
-              disabled={!selectedMachine || !selectedProject || !photos.machine || !photos.unit || !photos.software || clockingIn}
-              sx={{ borderRadius: 3, py: 1.5, fontSize: '1.1rem', fontWeight: 'bold' }}
+              disabled={!selectedMachine || !photos.machine || !photos.unit || !photos.software || clockingIn}
+              sx={{ fontWeight: 'bold' }}
             >
-              {clockingIn ? <CircularProgress size={24} color="inherit" /> : 'START MACHINE LOG'}
+              {clockingIn ? 'Starting...' : 'Submit & Start'}
             </Button>
-          </Box>
-        </Paper>
+          </DialogActions>
+        </Dialog>
+
+        {/* Dialog: End Machine Work */}
+        <Dialog open={endMachineDialogOpen} onClose={() => setEndMachineDialogOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <PrecisionManufacturingIcon /> End Machine Work
+          </DialogTitle>
+          <DialogContent dividers>
+            <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+              Select the active machine, add closing remarks, and upload the 3 final photos.
+            </Typography>
+            
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <TextField 
+                select
+                label="1. Select Active Machine" 
+                fullWidth 
+                value={selectedEndMachine} 
+                onChange={(e) => setSelectedEndMachine(e.target.value)} 
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
+              >
+                {activeMachineLogs?.filter((l: any) => l.status === 'active').map((log: any) => (
+                  <MenuItem key={log.id} value={log.id}>
+                    {log.machine?.name} (Operator: {log.operator?.name || 'Unknown'})
+                  </MenuItem>
+                ))}
+              </TextField>
+
+              <TextField 
+                fullWidth 
+                label="2. Work Completed / Remarks" 
+                multiline 
+                rows={3}
+                value={endRemarks}
+                onChange={(e) => setEndRemarks(e.target.value)}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
+              />
+
+              <Box>
+                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 2 }}>3. Upload Final Photos</Typography>
+                <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', pb: 1 }}>
+                  <ImageUploadBox label="MACHINE" previewUrl={endPhotos.machine} onClick={() => startCamera('end_machine')} />
+                  <ImageUploadBox label="STONE/UNIT" previewUrl={endPhotos.unit} onClick={() => startCamera('end_unit')} />
+                  <ImageUploadBox label="SOFTWARE" previewUrl={endPhotos.software} onClick={() => startCamera('end_software')} />
+                </Box>
+              </Box>
+
+            </Box>
+          </DialogContent>
+          <DialogActions sx={{ p: 2 }}>
+            <Button onClick={() => setEndMachineDialogOpen(false)} color="inherit">Cancel</Button>
+            <Button 
+              variant="contained" 
+              color="error" 
+              onClick={handleMachineClockOut}
+              disabled={!selectedEndMachine || !endPhotos.machine || !endPhotos.unit || !endPhotos.software || clockingOut}
+              sx={{ fontWeight: 'bold' }}
+            >
+              {clockingOut ? 'Ending...' : 'Submit & End Work'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Dialog: Material Tracking */}
+        <Dialog open={materialDialogOpen} onClose={() => setMaterialDialogOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, bgcolor: materialType === 'OUT' ? 'warning.light' : 'info.light', color: materialType === 'OUT' ? 'warning.dark' : 'info.dark' }}>
+            {materialType === 'OUT' ? <OutputIcon /> : <InputIcon />} 
+            {materialType === 'OUT' ? 'Material OUT (Take from Stock)' : 'Material IN (Return to Stock)'}
+          </DialogTitle>
+          <DialogContent dividers>
+            <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+              Select the stage of work, enter quantity, and capture 3 photos. Admin approval is required.
+            </Typography>
+            
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <TextField 
+                select
+                label="1. Select Work Stage" 
+                fullWidth 
+                value={materialStage} 
+                onChange={(e) => setMaterialStage(e.target.value)} 
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
+              >
+                {['CNC Carving', 'Inlay Work', 'Hand Carving', 'Polishing', 'Finishing', 'Assembly', 'Packing Preparation'].map((stage) => (
+                  <MenuItem key={stage} value={stage}>{stage}</MenuItem>
+                ))}
+              </TextField>
+
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                <TextField 
+                  select
+                  label="Assign To" 
+                  fullWidth 
+                  value={assigneeType} 
+                  onChange={(e) => setAssigneeType(e.target.value as any)} 
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
+                >
+                  <MenuItem value="self">Myself ({user?.name || 'Worker'})</MenuItem>
+                  <MenuItem value="worker">Other Staff Member</MenuItem>
+                  <MenuItem value="vendor">External Vendor</MenuItem>
+                </TextField>
+
+                {assigneeType === 'worker' && (
+                  <TextField 
+                    select
+                    label="Select Staff" 
+                    fullWidth 
+                    value={selectedStaffId} 
+                    onChange={(e) => setSelectedStaffId(e.target.value)} 
+                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
+                  >
+                    {staffList?.map((staff: any) => (
+                      <MenuItem key={staff.id} value={staff.id}>{staff.name}</MenuItem>
+                    ))}
+                  </TextField>
+                )}
+
+                {assigneeType === 'vendor' && (
+                  <TextField 
+                    label="Vendor Name" 
+                    fullWidth 
+                    value={vendorName} 
+                    onChange={(e) => setVendorName(e.target.value)} 
+                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
+                  />
+                )}
+              </Box>
+
+              <TextField 
+                fullWidth 
+                label="2. Quantity of Goods (Pieces)" 
+                type="number"
+                value={materialQuantity}
+                onChange={(e) => setMaterialQuantity(e.target.value)}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
+              />
+
+              <Box>
+                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 2 }}>3. Upload Mandatory Photos</Typography>
+                <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', pb: 1 }}>
+                  <ImageUploadBox label="MATERIAL" previewUrl={materialPhotos.machine} onClick={() => startCamera('mat_machine')} />
+                  <ImageUploadBox label="STONE/UNIT" previewUrl={materialPhotos.unit} onClick={() => startCamera('mat_unit')} />
+                  <ImageUploadBox label="WORK TICKET" previewUrl={materialPhotos.software} onClick={() => startCamera('mat_software')} />
+                </Box>
+              </Box>
+
+            </Box>
+          </DialogContent>
+          <DialogActions sx={{ p: 2 }}>
+            <Button onClick={() => setMaterialDialogOpen(false)} color="inherit">Cancel</Button>
+            <Button 
+              variant="contained" 
+              color={materialType === 'OUT' ? 'warning' : 'info'} 
+              onClick={handleMaterialSubmit}
+              disabled={!materialStage || !materialQuantity || !materialPhotos.machine || !materialPhotos.unit || !materialPhotos.software || creatingMaterial}
+              sx={{ fontWeight: 'bold' }}
+            >
+              {creatingMaterial ? 'Submitting...' : 'Submit to Admin'}
+            </Button>
+          </DialogActions>
+        </Dialog>
 
       </Box>
 
@@ -287,6 +629,22 @@ const WorkerDashboard: React.FC = () => {
         </Alert>
       </Snackbar>
 
+      {/* Camera Dialog */}
+      <Dialog open={isCameraOpen} onClose={stopCamera} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: '#222', color: '#FFF' }}>
+          Take Photo
+          <IconButton onClick={stopCamera} sx={{ color: '#FFF' }}><CloseIcon /></IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ bgcolor: '#000', p: 0, position: 'relative' }}>
+          <video ref={videoRef} autoPlay playsInline style={{ width: '100%', maxHeight: '70vh', objectFit: 'cover', display: 'block' }} />
+          <canvas ref={canvasRef} style={{ display: 'none' }} />
+        </DialogContent>
+        <DialogActions sx={{ bgcolor: '#222', p: 2, justifyContent: 'center' }}>
+          <Button variant="contained" color="success" size="large" onClick={capturePhoto} startIcon={<PhotoCameraIcon />} fullWidth sx={{ borderRadius: 8, py: 1.5, fontWeight: 'bold' }}>
+            Capture Photo
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

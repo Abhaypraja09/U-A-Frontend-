@@ -10,6 +10,7 @@ import Inventory from './pages/Inventory';
 import Production from './pages/Production';
 import Dispatch from './pages/Dispatch';
 import HR from './pages/HR';
+import Approvals from './pages/Approvals';
 import Dashboard from './pages/Dashboard';
 import LiveFeed from './pages/LiveFeed';
 import Machines from './pages/Machines';
@@ -54,6 +55,10 @@ const router = createBrowserRouter([
       {
         path: 'projects/:id',
         element: <ProjectDetails />
+      },
+      {
+        path: 'approvals',
+        element: <Approvals />
       },
       {
         path: 'accounts',

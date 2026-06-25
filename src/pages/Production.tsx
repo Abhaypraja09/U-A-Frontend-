@@ -3,14 +3,16 @@ import { Box, Typography, Button, Paper, Table, TableBody, TableCell, TableConta
 import AddIcon from '@mui/icons-material/Add';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import { useGetWorkOrdersQuery, useGetProjectsQuery, useGetMachinesQuery, useGetProductionLogsQuery, useCreateProductionLogMutation, useUpdateProductionLogMutation } from '../store/apiSlice';
+import { useGetWorkOrdersQuery, useGetProjectsQuery, useGetMachinesQuery, useGetProductionLogsQuery, useCreateProductionLogMutation, useUpdateProductionLogMutation, useGetMachineLogsQuery, useGetApprovedLogsQuery } from '../store/apiSlice';
 
 const Production: React.FC = () => {
   const [tab, setTab] = useState(0);
   const { data: workOrders, isLoading: workOrdersLoading, refetch: refetchWorkOrders } = useGetWorkOrdersQuery(undefined, { pollingInterval: 15000 });
   const { data: logs, isLoading: logsLoading, refetch: refetchLogs } = useGetProductionLogsQuery(undefined, { pollingInterval: 15000 });
+  const { data: machineLogs, isLoading: machineLogsLoading } = useGetMachineLogsQuery(undefined, { pollingInterval: 15000 });
   const { data: projects } = useGetProjectsQuery();
   const { data: machines } = useGetMachinesQuery();
+  const { data: approvedLogs } = useGetApprovedLogsQuery();
   
   const [createLog] = useCreateProductionLogMutation();
   const [updateLog] = useUpdateProductionLogMutation();
@@ -21,7 +23,7 @@ const Production: React.FC = () => {
   const [completeOpen, setCompleteOpen] = useState(false);
   const [completeData, setCompleteData] = useState({ id: '', quantityProduced: '', remarks: '' });
 
-  const activeWorkOrders = projects?.filter((p: any) => p.status === 'work_order') || [];
+  const activeWorkOrders = projects?.filter((p: any) => ['shop_drawing', 'work_order', 'production', 'material_planning'].includes(p.status)) || [];
   const activeMachines = machines?.filter((m: any) => m.status === 'active') || [];
 
   const handleOpen = () => setOpen(true);
@@ -79,6 +81,8 @@ const Production: React.FC = () => {
         <Tabs value={tab} onChange={(e, v) => setTab(v)}>
           <Tab label="Supervisor Logbook" />
           <Tab label="Active Work Orders" />
+          <Tab label="Worker Machine Logs" />
+          <Tab label="Material Tracking (IN/OUT)" />
         </Tabs>
       </Paper>
 
@@ -213,6 +217,103 @@ const Production: React.FC = () => {
                     </TableCell>
                   </TableRow>
                 ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+
+      {tab === 2 && (
+        <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 4 }}>
+          <Table>
+            <TableHead sx={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
+              <TableRow>
+                <TableCell><strong>Project Name</strong></TableCell>
+                <TableCell><strong>Machine Name</strong></TableCell>
+                <TableCell><strong>Operator</strong></TableCell>
+                <TableCell><strong>Punch In</strong></TableCell>
+                <TableCell><strong>Punch Out</strong></TableCell>
+                <TableCell><strong>Total Hours</strong></TableCell>
+                <TableCell><strong>Status</strong></TableCell>
+                <TableCell><strong>Work Report</strong></TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {machineLogsLoading ? (
+                <TableRow><TableCell colSpan={8} align="center" sx={{ p: 3 }}>Loading Machine Logs...</TableCell></TableRow>
+              ) : machineLogs?.length === 0 ? (
+                <TableRow><TableCell colSpan={8} align="center" sx={{ p: 3 }}>No machine logs found.</TableCell></TableRow>
+              ) : (
+                machineLogs?.map((log: any) => (
+                  <TableRow key={log.id} hover>
+                    <TableCell><Typography fontWeight="bold" color="primary.main">{log.project?.name || 'N/A'}</Typography></TableCell>
+                    <TableCell>{log.machine?.name}</TableCell>
+                    <TableCell>{log.operator?.name || 'N/A'}</TableCell>
+                    <TableCell>{new Date(log.startTime).toLocaleString('en-GB')}</TableCell>
+                    <TableCell>{log.endTime ? new Date(log.endTime).toLocaleString('en-GB') : '-'}</TableCell>
+                    <TableCell>
+                      {log.endTime 
+                        ? ((new Date(log.endTime).getTime() - new Date(log.startTime).getTime()) / (1000 * 60 * 60)).toFixed(2) + ' Hrs'
+                        : '-'}
+                    </TableCell>
+                    <TableCell>
+                      <Chip 
+                        label={log.status.toUpperCase()} 
+                        color={log.status === 'active' ? 'warning' : 'success'} 
+                        size="small" 
+                        sx={{ fontWeight: 'bold' }} 
+                      />
+                    </TableCell>
+                    <TableCell>{log.remarks || '-'}</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+
+      {/* Tab 3: Material Tracking (IN/OUT) */}
+      {tab === 3 && (
+        <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 4 }}>
+          <Table>
+            <TableHead sx={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
+              <TableRow>
+                <TableCell><strong>Transaction</strong></TableCell>
+                <TableCell><strong>Stage / Process</strong></TableCell>
+                <TableCell><strong>Project</strong></TableCell>
+                <TableCell><strong>Worker</strong></TableCell>
+                <TableCell><strong>Quantity (Pieces)</strong></TableCell>
+                <TableCell><strong>Date Approved</strong></TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {approvedLogs?.length ? approvedLogs.map((log: any) => (
+                <TableRow key={log.id} hover>
+                  <TableCell>
+                    <Chip 
+                      label={log.transactionType === 'OUT' ? 'OUT (Given)' : 'IN (Received)'} 
+                      color={log.transactionType === 'OUT' ? 'warning' : 'info'} 
+                      size="small" 
+                      sx={{ fontWeight: 'bold' }} 
+                    />
+                  </TableCell>
+                  <TableCell>{log.stage}</TableCell>
+                  <TableCell>
+                    {log.project ? (
+                      <Typography variant="body2" fontWeight="bold" color="primary">{log.project.projectId}</Typography>
+                    ) : (
+                      <Typography variant="body2" color="textSecondary">Unassigned</Typography>
+                    )}
+                  </TableCell>
+                  <TableCell>{log.worker?.name || 'Unknown'}</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }}>{log.quantityProduced}</TableCell>
+                  <TableCell>{new Date(log.createdAt).toLocaleDateString()}</TableCell>
+                </TableRow>
+              )) : (
+                <TableRow>
+                  <TableCell colSpan={6} align="center" sx={{ py: 4 }}>No approved material logs yet.</TableCell>
+                </TableRow>
               )}
             </TableBody>
           </Table>
