@@ -994,6 +994,53 @@ const ProjectDetails: React.FC = () => {
                   </Box>
                 </Box>
 
+                {/* INLINE ADDITIONAL COSTS */}
+                {(() => {
+                  const currentCostId = activeCostProductId || (products.length > 0 ? products[0].id : null);
+                  return (
+                    <Box sx={{ mb: 4, p: 3, border: '1px solid #E0E0E0', borderRadius: 3, bgcolor: '#FAFAFA' }}>
+                      <Typography variant="h6" fontWeight="bold" mb={3}>Additional Costs {currentCostId ? `for ${products.find(p => p.id === currentCostId)?.category || ''}` : ''}</Typography>
+                      {currentCostId ? (
+                        <Box>
+                          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: '1fr 1fr 1fr' }, gap: 3, p: 3, bgcolor: '#FFF', borderRadius: 2, border: '1px solid #E8E1D5', mb: 2 }}>
+                            {(quoteDetails[currentCostId] || getDefaultCosts()).map((item: any) => (
+                              <Box key={item.id} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <TextField 
+                                  fullWidth 
+                                  type="number"
+                                  label={item.name} 
+                                  value={item.amount === 0 ? '' : item.amount}
+                                  onChange={(e) => {
+                                    const val = Number(e.target.value);
+                                    setQuoteDetails(prev => {
+                                      const list = prev[currentCostId] || getDefaultCosts();
+                                      return { ...prev, [currentCostId]: list.map(c => c.id === item.id ? { ...c, amount: val } : c) };
+                                    });
+                                  }}
+                                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                                />
+                              </Box>
+                            ))}
+                          </Box>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Button color="primary" onClick={() => { setCustomCostName(''); setIsCostDialogOpen(true); }}>
+                              + Manage Cost Items
+                            </Button>
+                            <Typography variant="subtitle1" fontWeight="bold" color="#B38B36">
+                              Total Additional Cost: ₹
+                              {((quoteDetails[currentCostId] || []).reduce((acc: number, item: any) => acc + Number(item.amount || 0), 0)).toLocaleString('en-IN')}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      ) : (
+                         <Box sx={{ p: 4, textAlign: 'center', color: 'text.secondary', bgcolor: '#FFF', borderRadius: 2, border: '1px dashed #CCC' }}>
+                           Please add a product to estimation first.
+                         </Box>
+                      )}
+                    </Box>
+                  );
+                })()}
+
 
                 {/* DYNAMIC ESTIMATED TOTAL QUOTE BOX WITH REAL-TIME BREAKDOWN */}
                 <Box sx={{ 
@@ -1663,8 +1710,8 @@ const ProjectDetails: React.FC = () => {
 
         {/* RIGHT SIDEBAR TIMELINE */}
         {stepToRender !== 6 && (
-          <Box sx={{ width: { xs: '100%', md: 350 }, flexShrink: 0 }}>
-            <Paper elevation={0} sx={{ p: 4, border: '1px solid', borderColor: '#E8E1D5', borderRadius: 4, position: 'sticky', top: 24, boxShadow: '0px 4px 20px rgba(0, 0, 0, 0.02)' }}>
+          <Box sx={{ width: { xs: '100%', md: 350 }, flexShrink: 0, position: 'sticky', top: 24 }}>
+            <Paper elevation={0} sx={{ p: 4, border: '1px solid', borderColor: '#E8E1D5', borderRadius: 4, boxShadow: '0px 4px 20px rgba(0, 0, 0, 0.02)' }}>
             <Typography variant="h6" fontWeight="bold" mb={3} color="text.primary">Activity Log</Typography>
             
             <Stepper orientation="vertical" activeStep={displayActiveStep} sx={{ '& .MuiStepConnector-line': { minHeight: 40 } }}>
@@ -1703,57 +1750,46 @@ const ProjectDetails: React.FC = () => {
               )})}
             </Stepper>
           </Paper>
-          
+
           {stepToRender === 2 && (
             <Paper elevation={0} sx={{ p: 4, mt: 3, border: '1px solid', borderColor: '#E8E1D5', borderRadius: 4, boxShadow: '0px 4px 20px rgba(0, 0, 0, 0.02)' }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h6" fontWeight="bold" color="text.primary">Additional Costs</Typography>
-                <IconButton size="small" onClick={() => { setCustomCostName(''); setIsCostDialogOpen(true); }} sx={{ bgcolor: 'rgba(179, 139, 54, 0.1)', color: '#B38B36' }}><EditIcon fontSize="small" /></IconButton>
-              </Box>
-              <FormControl size="small" fullWidth sx={{ mb: 3 }}>
-                <Select
-                  displayEmpty
-                  value=""
-                  onChange={(e) => {
-                    const productId = e.target.value as string;
-                    if (productId) {
-                      setActiveCostProductId(productId);
-                      if (!quoteDetails[productId]) {
-                        setQuoteDetails(prev => ({ ...prev, [productId]: getDefaultCosts() }));
-                      }
-                      setIsCategoryCostsDialogOpen(true);
-                    }
-                  }}
-                  sx={{ bgcolor: '#FAFAFA', borderRadius: 2 }}
-                  disabled={products.length === 0}
-                >
-                  <MenuItem value="" disabled>Select Category to Add Costs</MenuItem>
-                  {products.map(p => (
-                    <MenuItem key={p.id} value={p.id}>{p.category}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {products.map(p => {
-                  const costs = quoteDetails[p.id] || [];
-                  const hasCosts = costs.some((c: any) => c.amount > 0);
-                  if (!hasCosts) return null;
-                  const totalCost = costs.reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0);
-                  return (
-                    <Box key={p.id} sx={{ p: 2, border: '1px solid #E8E1D5', borderRadius: 3, bgcolor: '#FFFDF5' }}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                        <Typography variant="subtitle2" fontWeight="bold" color="#B38B36">{p.category}</Typography>
-                        <Box>
-                          <IconButton size="small" onClick={() => { setActiveCostProductId(p.id); if (!quoteDetails[p.id]) setQuoteDetails(prev => ({...prev, [p.id]: getDefaultCosts()})); setIsCategoryCostsDialogOpen(true); }}><EditIcon fontSize="small" sx={{color: 'primary.main'}}/></IconButton>
-                          <IconButton size="small" onClick={() => { if(window.confirm(`Are you sure you want to delete all costs for ${p.category}?`)) { setQuoteDetails(prev => { const newState = {...prev}; const list = newState[p.id] || getDefaultCosts(); newState[p.id] = list.map((c:any) => ({...c, amount: 0})); return newState; })}}}><DeleteIcon fontSize="small" sx={{color: 'error.main'}}/></IconButton>
-                        </Box>
+              <Typography variant="h6" fontWeight="bold" color="text.primary" mb={2}>Select Category to Add Costs</Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                {products.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">No products added yet.</Typography>
+                ) : (
+                  products.map(p => {
+                    const currentCostId = activeCostProductId || products[0].id;
+                    const isSelected = p.id === currentCostId;
+                    const hasCosts = (quoteDetails[p.id] || []).some((c: any) => c.amount > 0);
+                    return (
+                      <Box 
+                        key={p.id} 
+                        onClick={() => {
+                          setActiveCostProductId(p.id);
+                          if (!quoteDetails[p.id]) {
+                            setQuoteDetails(prev => ({ ...prev, [p.id]: getDefaultCosts() }));
+                          }
+                        }}
+                        sx={{ 
+                          p: 2, 
+                          border: '1px solid', 
+                          borderColor: isSelected ? '#B38B36' : '#E8E1D5', 
+                          borderRadius: 2, 
+                          bgcolor: isSelected ? 'rgba(179, 139, 54, 0.05)' : '#FFFDF5',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          transition: '0.2s',
+                          '&:hover': { borderColor: '#B38B36', bgcolor: 'rgba(179, 139, 54, 0.05)' }
+                        }}
+                      >
+                        <Typography variant="subtitle2" fontWeight={isSelected ? "bold" : "medium"} color={isSelected ? "#B38B36" : "text.primary"}>{p.category}</Typography>
+                        {hasCosts && <CheckCircleIcon fontSize="small" sx={{ color: 'success.main' }} />}
                       </Box>
-                      <Typography variant="h6" fontWeight="bold" sx={{ color: '#333' }}>₹{totalCost.toLocaleString('en-IN')}</Typography>
-                    </Box>
-                  )
-                })}
-                {products.length > 0 && Object.keys(quoteDetails).filter(k => quoteDetails[k]?.some((c: any) => c.amount > 0)).length === 0 && (
-                  <Typography variant="body2" color="text.secondary" textAlign="center" sx={{ py: 2 }}>No costs added yet.</Typography>
+                    )
+                  })
                 )}
               </Box>
             </Paper>
@@ -2391,43 +2427,7 @@ const ProjectDetails: React.FC = () => {
         </Box>
       </Dialog>
 
-      {/* FILL CATEGORY COSTS DIALOG */}
-      <Dialog open={isCategoryCostsDialogOpen} onClose={() => setIsCategoryCostsDialogOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle sx={{ fontWeight: 'bold' }}>
-          Additional Costs: {activeCostProductId && products.find(p => p.id === activeCostProductId)?.category}
-        </DialogTitle>
-        <DialogContent dividers>
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 3, p: 1 }}>
-            {activeCostProductId && quoteDetails[activeCostProductId] && quoteDetails[activeCostProductId].map((item: any) => (
-              <Box key={item.id} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <TextField 
-                  fullWidth 
-                  type="number"
-                  label={item.name} 
-                  value={item.amount === 0 ? '' : item.amount}
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    setQuoteDetails(prev => {
-                      const list = prev[activeCostProductId] || getDefaultCosts();
-                      return { ...prev, [activeCostProductId]: list.map(c => c.id === item.id ? { ...c, amount: val } : c) };
-                    });
-                  }}
-                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-                />
-              </Box>
-            ))}
-          </Box>
-        </DialogContent>
-        <DialogActions sx={{ p: 2, display: 'flex', justifyContent: 'space-between' }}>
-          <Button color="inherit" onClick={() => {
-            setCustomCostName('');
-            setIsCostDialogOpen(true);
-          }}>+ Manage Cost Items</Button>
-          <Box>
-            <Button onClick={() => setIsCategoryCostsDialogOpen(false)} variant="contained" color="primary">Done</Button>
-          </Box>
-        </DialogActions>
-      </Dialog>
+
 
       {/* ADD/EDIT ADDITIONAL COST DIALOG */}
       <Dialog open={isCostDialogOpen} onClose={() => setIsCostDialogOpen(false)} maxWidth="sm" fullWidth>
