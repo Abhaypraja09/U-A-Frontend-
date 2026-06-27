@@ -109,8 +109,8 @@ export const apiSlice = createApi({
       query: () => '/machines',
       providesTags: ['Inventory'] // Reusing for simplicity or can create Machine tag
     }),
-    getLiveFeed: builder.query<any[], void>({
-      query: () => '/live-feed',
+    getLiveFeed: builder.query<any[], string | void>({
+      query: (date) => date ? `/live-feed?date=${date}` : '/live-feed',
       providesTags: ['Attendance', 'Production']
     }),
     punchIn: builder.mutation<any, any>({
@@ -137,12 +137,20 @@ export const apiSlice = createApi({
       query: () => '/machine-logs/daily-logs',
       providesTags: ['Attendance', 'Production']
     }),
-    approveMachineLog: builder.mutation<any, { id: string, projectId: string }>({
-      query: ({ id, projectId }) => ({ url: `/machine-logs/approve/${id}`, method: 'PUT', body: { projectId } }),
+    approveMachineLog: builder.mutation<any, { id: string, projectId: string, productId?: string, productName?: string }>({
+      query: ({ id, projectId, productId, productName }) => ({ url: `/machine-logs/approve/${id}`, method: 'PUT', body: { projectId, productId, productName } }),
       invalidatesTags: ['Production', 'Attendance']
     }),
     rejectMachineLog: builder.mutation<any, string>({
       query: (id) => ({ url: `/machine-logs/reject/${id}`, method: 'PUT' }),
+      invalidatesTags: ['Production', 'Attendance']
+    }),
+    editMachineLog: builder.mutation<any, { id: string; data: any }>({
+      query: ({ id, data }) => ({ url: `/machine-logs/${id}`, method: 'PUT', body: data }),
+      invalidatesTags: ['Production', 'Attendance']
+    }),
+    deleteMachineLog: builder.mutation<any, string>({
+      query: (id) => ({ url: `/machine-logs/${id}`, method: 'DELETE' }),
       invalidatesTags: ['Production', 'Attendance']
     }),
     getWorkOrders: builder.query<any[], void>({
@@ -253,6 +261,10 @@ export const apiSlice = createApi({
       query: () => '/production/approved-logs',
       providesTags: ['Production']
     }),
+    getActiveOutLogs: builder.query<any[], void>({
+      query: () => '/production/active-out-logs',
+      providesTags: ['Production']
+    }),
     getProjectProductionLogs: builder.query<any[], string>({
       query: (projectId) => `/production/project/${projectId}`,
       providesTags: ['Production']
@@ -314,7 +326,27 @@ export const apiSlice = createApi({
         body,
       }),
       invalidatesTags: ['Project']
-    })
+    }),
+    updateQuotation: builder.mutation<any, { id: string; data: Partial<any> }>({
+      query: ({ id, data }) => ({
+        url: `/quotations/${id}`,
+        method: 'PATCH',
+        body: data,
+      }),
+      invalidatesTags: ['Project']
+    }),
+    updateMaterialLog: builder.mutation<any, { id: string; returnedQty: number; returnDate: string }>({
+      query: ({ id, returnedQty, returnDate }) => ({ url: `/production/${id}/return`, method: 'PATCH', body: { returnedQty, returnDate } }),
+      invalidatesTags: ['Production']
+    }),
+    editProductionLog: builder.mutation<any, { id: string; data: any }>({
+      query: ({ id, data }) => ({ url: `/production/${id}`, method: 'PUT', body: data }),
+      invalidatesTags: ['Production']
+    }),
+    deleteProductionLog: builder.mutation<any, string>({
+      query: (id) => ({ url: `/production/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['Production']
+    }),
   }),
 });
 
@@ -350,6 +382,8 @@ export const {
   useGetDailyMachineLogsQuery,
   useApproveMachineLogMutation,
   useRejectMachineLogMutation,
+  useEditMachineLogMutation,
+  useDeleteMachineLogMutation,
   useGetMachineLogsQuery,
   useGetWorkOrdersQuery,
   useGetDispatchesQuery,
@@ -375,5 +409,10 @@ export const {
   useCreateMaterialLogMutation,
   useGetPendingApprovalsQuery,
   useApproveMaterialLogMutation,
-  useGetApprovedLogsQuery
+  useGetApprovedLogsQuery,
+  useGetActiveOutLogsQuery,
+  useUpdateQuotationMutation,
+  useUpdateMaterialLogMutation,
+  useEditProductionLogMutation,
+  useDeleteProductionLogMutation
 } = apiSlice;

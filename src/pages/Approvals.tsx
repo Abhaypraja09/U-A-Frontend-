@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { Box, Typography, Paper, Grid, Card, CardContent, CardMedia, Button, Chip, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, CircularProgress, Alert, Snackbar } from '@mui/material';
+import { Box, Typography, Paper, Grid, Card, CardContent, CardMedia, Button, Chip, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, CircularProgress, Alert, Snackbar, IconButton } from '@mui/material';
 import { useGetPendingApprovalsQuery, useApproveMaterialLogMutation, useGetProjectsQuery, useGetApprovedLogsQuery } from '../store/apiSlice';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
 import PendingActionsIcon from '@mui/icons-material/PendingActions';
 import OutputIcon from '@mui/icons-material/Output';
 import InputIcon from '@mui/icons-material/Input';
+import AddIcon from '@mui/icons-material/Add';
+import DeleteIcon from '@mui/icons-material/Delete';
 
 const Approvals: React.FC = () => {
   const { data: pendingLogs, isLoading, refetch } = useGetPendingApprovalsQuery(undefined, { pollingInterval: 5000 });
@@ -14,7 +16,7 @@ const Approvals: React.FC = () => {
   const [approveLog, { isLoading: isApproving }] = useApproveMaterialLogMutation();
 
   const [selectedLog, setSelectedLog] = useState<any>(null);
-  const [selectedProject, setSelectedProject] = useState<string>('');
+  const [projectSplits, setProjectSplits] = useState<{projectId: string, qty: number, productId?: string, productName?: string}[]>([{projectId: '', qty: 0}]);
   const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
   
@@ -22,7 +24,7 @@ const Approvals: React.FC = () => {
 
   const handleApproveClick = (log: any) => {
     setSelectedLog(log);
-    setSelectedProject('');
+    setProjectSplits([{ projectId: log.projectId || '', qty: log.quantityProduced || 0, productId: log.productId || '', productName: log.productName || '' }]);
     setApprovalDialogOpen(true);
   };
 
@@ -38,7 +40,26 @@ const Approvals: React.FC = () => {
 
   const submitApproval = async () => {
     try {
-      await approveLog({ id: selectedLog.id, data: { approvalStatus: 'approved', projectId: selectedProject } }).unwrap();
+      const validSplits = projectSplits.filter(s => s.projectId && s.qty > 0);
+      const totalSplitQty = validSplits.reduce((acc, split) => acc + (Number(split.qty) || 0), 0);
+      
+      if (totalSplitQty > selectedLog.quantityProduced) {
+        setToast({ open: true, message: 'Total split quantity cannot exceed original quantity.', severity: 'error' });
+        return;
+      }
+      if (validSplits.length === 0) {
+        setToast({ open: true, message: 'Please select at least one project and enter quantity.', severity: 'error' });
+        return;
+      }
+
+      await approveLog({ 
+        id: selectedLog.id, 
+        data: { 
+          approvalStatus: 'approved', 
+          splits: validSplits
+        } 
+      }).unwrap();
+      
       setToast({ open: true, message: 'Log Approved successfully', severity: 'success' });
       setApprovalDialogOpen(false);
       refetch();
@@ -67,7 +88,7 @@ const Approvals: React.FC = () => {
       ) : (
         <Grid container spacing={3}>
           {pendingLogs.map((log: any) => (
-            <Grid item xs={12} md={6} lg={4} key={log.id}>
+            <Grid size={{ xs: 12, md: 6, lg: 4 }} key={log.id}>
               <Card sx={{ borderRadius: 4, boxShadow: '0 4px 12px rgba(0,0,0,0.05)', position: 'relative' }}>
                 <Box sx={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }}>
                   <Chip 
@@ -151,13 +172,14 @@ const Approvals: React.FC = () => {
       <Paper sx={{ borderRadius: 4, overflow: 'hidden', border: '1px solid', borderColor: 'divider' }}>
         <Box sx={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-            <thead style={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
+             <thead style={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
               <tr>
                 <th style={{ padding: '16px', borderBottom: '1px solid #eee' }}>Transaction</th>
                 <th style={{ padding: '16px', borderBottom: '1px solid #eee' }}>Stage</th>
                 <th style={{ padding: '16px', borderBottom: '1px solid #eee' }}>Project</th>
                 <th style={{ padding: '16px', borderBottom: '1px solid #eee' }}>Worker</th>
                 <th style={{ padding: '16px', borderBottom: '1px solid #eee' }}>Qty</th>
+                <th style={{ padding: '16px', borderBottom: '1px solid #eee' }}>Photos</th>
                 <th style={{ padding: '16px', borderBottom: '1px solid #eee' }}>Date Approved</th>
               </tr>
             </thead>
@@ -186,11 +208,40 @@ const Approvals: React.FC = () => {
                     )}
                   </td>
                   <td style={{ padding: '16px', borderBottom: '1px solid #eee', fontWeight: 'bold' }}>{log.quantityProduced}</td>
-                  <td style={{ padding: '16px', borderBottom: '1px solid #eee', color: '#666' }}>{new Date(log.createdAt).toLocaleDateString()}</td>
+                  <td style={{ padding: '16px', borderBottom: '1px solid #eee' }}>
+                    <Box sx={{ display: 'flex', gap: 0.5 }}>
+                      {log.startPhotos?.machine && (
+                        <img 
+                          src={log.startPhotos.machine} 
+                          alt="Machine" 
+                          style={{ width: 40, height: 40, borderRadius: 4, cursor: 'pointer', objectFit: 'cover' }} 
+                          onClick={() => setPreviewPhoto(log.startPhotos.machine)}
+                        />
+                      )}
+                      {log.startPhotos?.unit && (
+                        <img 
+                          src={log.startPhotos.unit} 
+                          alt="Unit" 
+                          style={{ width: 40, height: 40, borderRadius: 4, cursor: 'pointer', objectFit: 'cover' }} 
+                          onClick={() => setPreviewPhoto(log.startPhotos.unit)}
+                        />
+                      )}
+                      {log.startPhotos?.software && (
+                        <img 
+                          src={log.startPhotos.software} 
+                          alt="Software" 
+                          style={{ width: 40, height: 40, borderRadius: 4, cursor: 'pointer', objectFit: 'cover' }} 
+                          onClick={() => setPreviewPhoto(log.startPhotos.software)}
+                        />
+                      )}
+                      {!log.startPhotos?.machine && !log.startPhotos?.unit && !log.startPhotos?.software && '-'}
+                    </Box>
+                  </td>
+                  <td style={{ padding: '16px', borderBottom: '1px solid #eee', color: '#666' }}>{new Date(log.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: '#666' }}>No approved logs yet.</td>
+                  <td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: '#666' }}>No approved logs yet.</td>
                 </tr>
               )}
             </tbody>
@@ -198,25 +249,107 @@ const Approvals: React.FC = () => {
         </Box>
       </Paper>
 
-      {/* Approval Dialog (Assign Project) */}
-      <Dialog open={approvalDialogOpen} onClose={() => setApprovalDialogOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 'bold' }}>Approve Material Log</DialogTitle>
+      {/* Approval Dialog — Multi Project Selection */}
+      <Dialog open={approvalDialogOpen} onClose={() => setApprovalDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 'bold' }}>
+          Approve Material Log
+          {selectedLog && (
+            <Typography variant="caption" display="block" sx={{ color: 'text.secondary', mt: 0.5 }}>
+              Stage: {selectedLog.stage} • Qty: {selectedLog.quantityProduced}
+            </Typography>
+          )}
+        </DialogTitle>
         <DialogContent dividers>
-          <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-            Please select the associated Project for this material log.
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+            Select one or more projects for this material. You can split the quantity across multiple projects.
           </Typography>
-          <TextField 
-            select
-            label="Assign Project" 
-            fullWidth 
-            value={selectedProject} 
-            onChange={(e) => setSelectedProject(e.target.value)} 
-            sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
+
+          {/* Project Assignment rows */}
+          {projectSplits.map((split, idx) => {
+            const selectedProjectObj = projects?.find((p: any) => p.id === split.projectId);
+            const projectProducts = selectedProjectObj?.products || [];
+            return (
+              <Box key={idx} sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 2, p: 2, bgcolor: '#F9F9F9', borderRadius: 2, border: '1px solid #eee' }}>
+                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                  <TextField 
+                    select
+                    label="Select Project" 
+                    fullWidth
+                    size="small"
+                    value={split.projectId} 
+                    onChange={(e) => {
+                      const newSplits = [...projectSplits];
+                      newSplits[idx].projectId = e.target.value;
+                      newSplits[idx].productId = '';
+                      newSplits[idx].productName = '';
+                      setProjectSplits(newSplits);
+                    }} 
+                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                  >
+                    {projects?.map((p: any) => (
+                      <MenuItem key={p.id} value={p.id}>{p.projectId} – {p.name} ({p.clientName})</MenuItem>
+                    ))}
+                  </TextField>
+                </Box>
+                
+                {split.projectId && projectProducts.length > 0 && (
+                  <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                    <TextField 
+                      select
+                      label="Select Category (Optional)" 
+                      fullWidth
+                      size="small"
+                      value={split.productId || ''} 
+                      onChange={(e) => {
+                        const newSplits = [...projectSplits];
+                        newSplits[idx].productId = e.target.value;
+                        newSplits[idx].productName = projectProducts.find((p:any) => p.id === e.target.value)?.category || '';
+                        setProjectSplits(newSplits);
+                      }} 
+                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                    >
+                      <MenuItem value="" disabled>Select Category</MenuItem>
+                      {projectProducts.map((p: any) => (
+                        <MenuItem key={p.id} value={p.id}>{p.category}</MenuItem>
+                      ))}
+                    </TextField>
+                  </Box>
+                )}
+                
+                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                  <TextField 
+                    type="number"
+                    label="Quantity"
+                    size="small"
+                    value={split.qty === 0 ? '' : split.qty}
+                    onChange={(e) => {
+                      const newSplits = [...projectSplits];
+                      newSplits[idx].qty = Number(e.target.value);
+                      setProjectSplits(newSplits);
+                    }}
+                    sx={{ width: 120, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                  />
+                  <IconButton 
+                    color="error" 
+                    onClick={() => {
+                      setProjectSplits(projectSplits.filter((_, i) => i !== idx));
+                    }}
+                    disabled={projectSplits.length === 1}
+                  >
+                    <DeleteIcon />
+                  </IconButton>
+                </Box>
+              </Box>
+            );
+          })}
+          
+          <Button 
+            startIcon={<AddIcon />} 
+            onClick={() => setProjectSplits([...projectSplits, { projectId: '', qty: 0 }])}
+            sx={{ textTransform: 'none', fontWeight: 'bold' }}
           >
-            {projects?.map((p: any) => (
-              <MenuItem key={p.id} value={p.id}>{p.projectId} - {p.name}</MenuItem>
-            ))}
-          </TextField>
+            Add Project Split
+          </Button>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
           <Button onClick={() => setApprovalDialogOpen(false)} color="inherit">Cancel</Button>
@@ -224,7 +357,7 @@ const Approvals: React.FC = () => {
             variant="contained" 
             color="success" 
             onClick={submitApproval}
-            disabled={!selectedProject || isApproving}
+            disabled={!projectSplits.some(s => s.projectId && s.qty > 0) || isApproving}
             sx={{ fontWeight: 'bold' }}
           >
             {isApproving ? 'Approving...' : 'Confirm Approval'}
@@ -233,9 +366,11 @@ const Approvals: React.FC = () => {
       </Dialog>
 
       {/* Fullscreen Photo Preview Dialog */}
-      <Dialog open={!!previewPhoto} onClose={() => setPreviewPhoto(null)} maxWidth="lg" fullWidth PaperProps={{ sx: { bgcolor: 'transparent', boxShadow: 'none' } }}>
+      <Dialog open={!!previewPhoto} onClose={() => setPreviewPhoto(null)} maxWidth="lg" fullWidth PaperProps={{ style: { backgroundColor: 'transparent', boxShadow: 'none' } } as any}>
         <Box sx={{ position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', p: 2 }} onClick={() => setPreviewPhoto(null)}>
-          <img src={previewPhoto || ''} alt="Preview" style={{ maxWidth: '100%', maxHeight: '90vh', objectFit: 'contain', borderRadius: '8px' }} />
+          {previewPhoto ? (
+            <img src={previewPhoto} alt="Preview" style={{ maxWidth: '100%', maxHeight: '90vh', objectFit: 'contain', borderRadius: '8px' }} />
+          ) : null}
         </Box>
       </Dialog>
 

@@ -150,24 +150,55 @@ export const generateQuotationPDF = (project: any, products: any[], quoteDetails
   const productsTotal = products.reduce((acc, p) => acc + (p.amount || 0), 0);
   
   // Additional Costs
-  const additionalItems = [];
-  if (quoteDetails.materialCost) additionalItems.push(['Material Cost', `Rs. ${quoteDetails.materialCost.toLocaleString('en-IN')}`]);
-  if (quoteDetails.cncCost) additionalItems.push(['CNC Cutting Cost', `Rs. ${quoteDetails.cncCost.toLocaleString('en-IN')}`]);
-  if (quoteDetails.handCarvingCost) additionalItems.push(['Hand Carving Cost', `Rs. ${quoteDetails.handCarvingCost.toLocaleString('en-IN')}`]);
-  if (quoteDetails.inlayCost) additionalItems.push(['Inlay Cost', `Rs. ${quoteDetails.inlayCost.toLocaleString('en-IN')}`]);
-  if (quoteDetails.polishingCost) additionalItems.push(['Polishing Cost', `Rs. ${quoteDetails.polishingCost.toLocaleString('en-IN')}`]);
-  if (quoteDetails.packingCost) additionalItems.push(['Packing Cost', `Rs. ${quoteDetails.packingCost.toLocaleString('en-IN')}`]);
-  if (quoteDetails.transportCost) additionalItems.push(['Transport Cost', `Rs. ${quoteDetails.transportCost.toLocaleString('en-IN')}`]);
-  if (quoteDetails.installationCost) additionalItems.push(['Installation Cost', `Rs. ${quoteDetails.installationCost.toLocaleString('en-IN')}`]);
+  const additionalItems: [string, string][] = [];
+  let additionalTotal = 0;
 
-  const additionalTotal = (quoteDetails.materialCost || 0) + 
-    (quoteDetails.cncCost || 0) + 
-    (quoteDetails.handCarvingCost || 0) + 
-    (quoteDetails.inlayCost || 0) + 
-    (quoteDetails.polishingCost || 0) + 
-    (quoteDetails.packingCost || 0) + 
-    (quoteDetails.transportCost || 0) + 
-    (quoteDetails.installationCost || 0);
+  if (Array.isArray(quoteDetails)) {
+    quoteDetails.forEach((item: any) => {
+      if (item.amount) {
+        additionalItems.push([item.name || 'N/A', `Rs. ${Number(item.amount).toLocaleString('en-IN')}`]);
+      }
+    });
+    additionalTotal = quoteDetails.reduce((acc, item) => acc + Number(item.amount || 0), 0);
+  } else if (quoteDetails && typeof quoteDetails === 'object' && quoteDetails.materialCost === undefined) {
+    // New per-category Record format
+    Object.keys(quoteDetails).forEach(productId => {
+       const product = products.find(p => p.id === productId);
+       const categoryName = product ? product.category : 'Unknown Category';
+       const costs = quoteDetails[productId];
+       if (Array.isArray(costs)) {
+          let hasCosts = false;
+          costs.forEach((item: any) => {
+             if (item.amount) {
+                if (!hasCosts) {
+                   additionalItems.push([`[ ${categoryName} ]`, '']);
+                   hasCosts = true;
+                }
+                additionalItems.push([`  - ${item.name || 'N/A'}`, `Rs. ${Number(item.amount).toLocaleString('en-IN')}`]);
+                additionalTotal += Number(item.amount);
+             }
+          });
+       }
+    });
+  } else if (quoteDetails) {
+    if (quoteDetails.materialCost) additionalItems.push(['Material Cost', `Rs. ${quoteDetails.materialCost.toLocaleString('en-IN')}`]);
+    if (quoteDetails.cncCost) additionalItems.push(['CNC Cutting Cost', `Rs. ${quoteDetails.cncCost.toLocaleString('en-IN')}`]);
+    if (quoteDetails.handCarvingCost) additionalItems.push(['Hand Carving Cost', `Rs. ${quoteDetails.handCarvingCost.toLocaleString('en-IN')}`]);
+    if (quoteDetails.inlayCost) additionalItems.push(['Inlay Cost', `Rs. ${quoteDetails.inlayCost.toLocaleString('en-IN')}`]);
+    if (quoteDetails.polishingCost) additionalItems.push(['Polishing Cost', `Rs. ${quoteDetails.polishingCost.toLocaleString('en-IN')}`]);
+    if (quoteDetails.packingCost) additionalItems.push(['Packing Cost', `Rs. ${quoteDetails.packingCost.toLocaleString('en-IN')}`]);
+    if (quoteDetails.transportCost) additionalItems.push(['Transport Cost', `Rs. ${quoteDetails.transportCost.toLocaleString('en-IN')}`]);
+    if (quoteDetails.installationCost) additionalItems.push(['Installation Cost', `Rs. ${quoteDetails.installationCost.toLocaleString('en-IN')}`]);
+
+    additionalTotal = (quoteDetails.materialCost || 0) + 
+      (quoteDetails.cncCost || 0) + 
+      (quoteDetails.handCarvingCost || 0) + 
+      (quoteDetails.inlayCost || 0) + 
+      (quoteDetails.polishingCost || 0) + 
+      (quoteDetails.packingCost || 0) + 
+      (quoteDetails.transportCost || 0) + 
+      (quoteDetails.installationCost || 0);
+  }
 
   const grandTotal = productsTotal + additionalTotal;
 

@@ -15,6 +15,7 @@ import LiveTvIcon from '@mui/icons-material/LiveTv';
 import PendingActionsIcon from '@mui/icons-material/PendingActions';
 import EngineeringIcon from '@mui/icons-material/Engineering';
 import GroupIcon from '@mui/icons-material/Group';
+import MenuBookIcon from '@mui/icons-material/MenuBook';
 
 interface SidebarProps {
   mobileOpen: boolean;
@@ -25,12 +26,11 @@ interface SidebarProps {
 const menuItems = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
   { text: 'Live Feed', icon: <LiveTvIcon />, path: '/live-feed' },
+  { text: 'Log Book', icon: <MenuBookIcon />, path: '/log-book' },
   { text: 'Enquiries Pipeline', icon: <FilterAltIcon />, path: '/crm' },
   { text: 'Active Work Orders', icon: <WorkIcon />, path: '/projects' },
   { text: 'Approvals', icon: <PendingActionsIcon />, path: '/approvals' },
   { text: 'Machine Master', icon: <PrecisionManufacturingIcon />, path: '/machines' },
-  { text: 'Worker Dashboard', icon: <EngineeringIcon />, path: '/worker-dashboard' },
-  { text: 'Factory Attendance', icon: <GroupIcon />, path: '/attendance-dashboard' },
   { text: 'Production Log', icon: <ReceiptLongIcon />, path: '/production' },
   { text: 'Inventory', icon: <InventoryIcon />, path: '/inventory' },
   { text: 'Accounts', icon: <AttachMoneyIcon />, path: '/accounts' },

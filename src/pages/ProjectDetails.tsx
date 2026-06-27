@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Box, Typography, Button, Paper, Stepper, Step, StepLabel, TextField, Divider, Chip, Dialog, DialogTitle, DialogContent, IconButton, Avatar, Select, MenuItem, FormControl, InputLabel, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Autocomplete, Snackbar, createFilterOptions } from '@mui/material';
+import { Box, Typography, Button, Paper, Stepper, Step, StepLabel, TextField, Divider, Chip, Dialog, DialogTitle, DialogContent, DialogActions, IconButton, Avatar, Select, MenuItem, FormControl, InputLabel, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Autocomplete, Snackbar, createFilterOptions, InputAdornment, Grid, LinearProgress, Tabs, Tab } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import FolderSpecialIcon from '@mui/icons-material/FolderSpecial';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -11,6 +11,7 @@ import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import InfoIcon from '@mui/icons-material/Info';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import ImageIcon from '@mui/icons-material/Image';
 import { 
   useGetProjectByIdQuery, useUpdateProjectMutation, useCreateQuotationMutation, 
   useCreateInvoiceMutation, useUploadFilesMutation, useGetDrawingsQuery, 
@@ -19,7 +20,7 @@ import {
   useGetProjectProductionLogsQuery, useCreateProductionLogMutation, useUpdateProductionLogMutation,
   useGetInventoryQuery, useGetCategoriesQuery, useCreateCategoryMutation, useDeleteCategoryMutation,
   useGetUnitsQuery, useCreateUnitMutation, useDeleteUnitMutation,
-  useDeleteDrawingMutation, useUpdateDrawingMutation, useGetMachineLogsQuery
+  useDeleteDrawingMutation, useUpdateDrawingMutation, useGetMachineLogsQuery, useUpdateQuotationMutation
 } from '../store/apiSlice';
 import { generateReceiptPDF, generateWorkOrderPDF, generateQuotationPDF } from '../utils/pdfGenerator';
 
@@ -37,6 +38,7 @@ const ProjectDetails: React.FC = () => {
   const { data: drawings, refetch: refetchDrawings } = useGetDrawingsQuery(id as string);
   const [updateProject] = useUpdateProjectMutation();
   const [createQuotation] = useCreateQuotationMutation();
+  const [updateQuotation] = useUpdateQuotationMutation();
   const [createInvoice] = useCreateInvoiceMutation();
   const [uploadFiles] = useUploadFilesMutation();
   const [addDrawing] = useAddDrawingMutation();
@@ -65,6 +67,32 @@ const ProjectDetails: React.FC = () => {
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
   const [cameraPurpose, setCameraPurpose] = useState<'drawing' | 'clientPhoto'>('drawing');
 
+  // Product Production States
+  const [productionDialogOpen, setProductionDialogOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<any>(null);
+  const [productionForm, setProductionForm] = useState({ stage: 'cutting', quantityProduced: 1, remarks: '' });
+  const handleProductProductionSubmit = async () => {
+    if (!selectedProduct) return;
+    try {
+      await createProductionLog({
+        projectId: id,
+        stage: productionForm.stage,
+        quantityProduced: productionForm.quantityProduced,
+        remarks: productionForm.remarks,
+        transactionType: 'IN', // As it's produced
+        productId: selectedProduct.id,
+        productName: selectedProduct.name
+      }).unwrap();
+      setSnackbarMessage(`Successfully recorded ${productionForm.quantityProduced} for ${selectedProduct.name}`);
+      setProductionDialogOpen(false);
+      setProductionForm({ stage: 'cutting', quantityProduced: 1, remarks: '' });
+      refetch();
+    } catch (err) {
+      console.error('Failed to log product production', err);
+      setSnackbarMessage('Error logging production');
+    }
+  };
+  
   // Edit Drawing Dialog States
   const [isEditDrawingOpen, setIsEditDrawingOpen] = useState(false);
   const [editingDrawing, setEditingDrawing] = useState<any>(null);
@@ -94,10 +122,13 @@ const ProjectDetails: React.FC = () => {
   const [previewFileUrl, setPreviewFileUrl] = useState<string | null>(null);
   const [isProductDialogOpen, setIsProductDialogOpen] = useState(false);
   const [editingProducts, setEditingProducts] = useState<Product[]>([]);
+  const [cameraProductIndex, setCameraProductIndex] = useState<number | null>(null);
   const [reserveDialogOpen, setReserveDialogOpen] = useState(false);
   const [selectedInventoryItem, setSelectedInventoryItem] = useState<any>(null);
   const [reserveQty, setReserveQty] = useState('');
   const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [isCostDialogOpen, setIsCostDialogOpen] = useState(false);
+  const [customCostName, setCustomCostName] = useState('');
   
   type Product = {
     id: string;
@@ -109,6 +140,7 @@ const ProjectDetails: React.FC = () => {
     qty: number;
     rate: number;
     amount: number;
+    photo?: string;
   };
   const [products, setProducts] = useState<Product[]>(() => {
     const saved = localStorage.getItem(`quoteProducts_${id}`);
@@ -119,16 +151,44 @@ const ProjectDetails: React.FC = () => {
     localStorage.setItem(`quoteProducts_${id}`, JSON.stringify(products));
   }, [products, id]);
 
-  const [quoteDetails, setQuoteDetails] = useState(() => {
+  const [activeCostProductId, setActiveCostProductId] = useState<string>('');
+  const [isCategoryCostsDialogOpen, setIsCategoryCostsDialogOpen] = useState<boolean>(false);
+
+  const getDefaultCosts = () => [
+      { id: 'mat', name: 'Material Cost', amount: 0 },
+      { id: 'cnc', name: 'CNC Cost', amount: 0 },
+      { id: 'hc', name: 'Hand Carving Cost', amount: 0 },
+      { id: 'inlay', name: 'Inlay Cost', amount: 0 },
+      { id: 'polish', name: 'Polishing Cost', amount: 0 },
+      { id: 'pack', name: 'Packing Cost', amount: 0 },
+      { id: 'trans', name: 'Transport Cost', amount: 0 },
+      { id: 'inst', name: 'Installation Cost', amount: 0 }
+  ];
+
+  const [quoteDetails, setQuoteDetails] = useState<Record<string, any[]>>(() => {
     const saved = localStorage.getItem(`quoteDraft_${id}`);
     if (saved) {
       const parsed = JSON.parse(saved);
-      delete parsed.marginPercentage;
-      return parsed;
+      if (Array.isArray(parsed)) {
+          return { default: parsed };
+      }
+      if (parsed && typeof parsed === 'object') {
+          if (parsed.materialCost !== undefined) {
+             return { default: [
+               { id: 'mat', name: 'Material Cost', amount: parsed.materialCost || 0 },
+               { id: 'cnc', name: 'CNC Cost', amount: parsed.cncCost || 0 },
+               { id: 'hc', name: 'Hand Carving Cost', amount: parsed.handCarvingCost || 0 },
+               { id: 'inlay', name: 'Inlay Cost', amount: parsed.inlayCost || 0 },
+               { id: 'polish', name: 'Polishing Cost', amount: parsed.polishingCost || 0 },
+               { id: 'pack', name: 'Packing Cost', amount: parsed.packingCost || 0 },
+               { id: 'trans', name: 'Transport Cost', amount: parsed.transportCost || 0 },
+               { id: 'inst', name: 'Installation Cost', amount: parsed.installationCost || 0 }
+             ]};
+          }
+          return parsed;
+      }
     }
-    return {
-      materialCost: 0, cncCost: 0, handCarvingCost: 0, inlayCost: 0, polishingCost: 0, packingCost: 0, transportCost: 0, installationCost: 0
-    };
+    return {};
   });
 
   React.useEffect(() => {
@@ -136,6 +196,7 @@ const ProjectDetails: React.FC = () => {
   }, [quoteDetails, id]);
 
   const [advancePayment, setAdvancePayment] = useState(0);
+  const [productionTab, setProductionTab] = useState(0);
 
   const { data: categories = [] } = useGetCategoriesQuery();
   const [createCategory] = useCreateCategoryMutation();
@@ -205,17 +266,27 @@ const ProjectDetails: React.FC = () => {
           }
         }
 
-        if (isPastQuotation || !savedDraft) {
-          setQuoteDetails({
-            materialCost: latestQuote.materialCost || 0,
-            cncCost: latestQuote.cncCost || 0,
-            handCarvingCost: latestQuote.handCarvingCost || 0,
-            inlayCost: latestQuote.inlayCost || 0,
-            polishingCost: latestQuote.polishingCost || 0,
-            packingCost: latestQuote.packingCost || 0,
-            transportCost: latestQuote.transportCost || 0,
-            installationCost: latestQuote.installationCost || 0
-          });
+        if (!savedDraft) {
+          if (latestQuote.additionalCosts && typeof latestQuote.additionalCosts === 'object') {
+            if (Array.isArray(latestQuote.additionalCosts)) {
+               setQuoteDetails({ default: latestQuote.additionalCosts });
+            } else if ((latestQuote.additionalCosts as any).materialCost !== undefined) {
+               setQuoteDetails({ default: [
+                 { id: 'mat', name: 'Material Cost', amount: (latestQuote.additionalCosts as any).materialCost || 0 },
+                 { id: 'cnc', name: 'CNC Cost', amount: (latestQuote.additionalCosts as any).cncCost || 0 },
+                 { id: 'hc', name: 'Hand Carving Cost', amount: (latestQuote.additionalCosts as any).handCarvingCost || 0 },
+                 { id: 'inlay', name: 'Inlay Cost', amount: (latestQuote.additionalCosts as any).inlayCost || 0 },
+                 { id: 'polish', name: 'Polishing Cost', amount: (latestQuote.additionalCosts as any).polishingCost || 0 },
+                 { id: 'pack', name: 'Packing Cost', amount: (latestQuote.additionalCosts as any).packingCost || 0 },
+                 { id: 'trans', name: 'Transport Cost', amount: (latestQuote.additionalCosts as any).transportCost || 0 },
+                 { id: 'inst', name: 'Installation Cost', amount: (latestQuote.additionalCosts as any).installationCost || 0 }
+               ]});
+            } else {
+               setQuoteDetails(latestQuote.additionalCosts as any);
+            }
+          } else {
+            setQuoteDetails({});
+          }
         }
       }
     }
@@ -277,8 +348,19 @@ const ProjectDetails: React.FC = () => {
               if (res.success && res.urls.length > 0) {
                 const url = res.urls[0];
                 if (cameraPurpose === 'clientPhoto') {
-                  setEditFormData(prev => ({ ...prev, customerPhoto: url }));
+                  setEditFormData(prev => {
+                    const photos = prev.customerPhoto ? prev.customerPhoto.split(',').filter(Boolean) : [];
+                    return { ...prev, customerPhoto: [...photos, url].join(',') };
+                  });
                   setSnackbarMessage('Client photo captured successfully!');
+                } else if (cameraPurpose === 'productPhoto') {
+                  if (cameraProductIndex !== null) {
+                    const ep = editingProducts[cameraProductIndex];
+                    const existing = ep.photo ? ep.photo.split(',').filter(Boolean) : [];
+                    handleUpdateEditingProduct(cameraProductIndex, 'photo', [...existing, url].join(','));
+                    setCameraProductIndex(null);
+                  }
+                  setSnackbarMessage('Product design photo captured successfully!');
                 } else {
                   const currentStepVal = viewingStepOverride !== null ? viewingStepOverride : activeStep;
                   const type = currentStepVal === 1 ? 'Reference Design' : 'Shop Drawing';
@@ -358,7 +440,7 @@ const ProjectDetails: React.FC = () => {
     setEditingProducts(editingProducts.filter((_, i) => i !== index));
   };
 
-  const handleSaveProducts = () => {
+  const handleSaveProducts = async () => {
     let newProducts = [...products];
     editingProducts.forEach(ep => {
       const existingIdx = newProducts.findIndex(p => p.id === ep.id);
@@ -371,6 +453,19 @@ const ProjectDetails: React.FC = () => {
     setProducts(newProducts);
     setIsProductDialogOpen(false);
     setEditingProducts([]);
+
+    // Persist to backend if a quotation exists for this project
+    try {
+      const { data: quotations } = await fetch(`/api/quotations/project/${id}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      }).then(r => r.json()).then(data => ({ data }));
+      if (quotations && quotations.length > 0) {
+        await updateQuotation({ id: quotations[0].id, data: { products: newProducts } });
+      }
+    } catch (e) {
+      // Silent fail - products are still updated in local state
+      console.error('Failed to persist products to quotation:', e);
+    }
   };
 
   const handleRemoveProduct = (id: string) => {
@@ -410,7 +505,7 @@ const ProjectDetails: React.FC = () => {
 
   const handleCreateQuotation = async () => {
     try {
-      await createQuotation({ projectId: id, products, ...quoteDetails }).unwrap();
+      await createQuotation({ projectId: id, products, additionalCosts: quoteDetails }).unwrap();
       localStorage.removeItem(`quoteDraft_${id}`);
       localStorage.removeItem(`quoteProducts_${id}`);
       await handleNextStage('advance_payment');
@@ -422,14 +517,9 @@ const ProjectDetails: React.FC = () => {
   const handleAdvancePayment = async () => {
     try {
       const productsTotal = products.reduce((acc, p) => acc + p.amount, 0);
-      const additionalTotal = (quoteDetails.materialCost || 0) + 
-        (quoteDetails.cncCost || 0) + 
-        (quoteDetails.handCarvingCost || 0) + 
-        (quoteDetails.inlayCost || 0) + 
-        (quoteDetails.polishingCost || 0) + 
-        (quoteDetails.packingCost || 0) + 
-        (quoteDetails.transportCost || 0) + 
-        (quoteDetails.installationCost || 0);
+      const additionalTotal = Array.isArray(quoteDetails)
+        ? quoteDetails.reduce((sum, item) => sum + Number(item.amount || 0), 0)
+        : 0;
       const totalAmount = productsTotal + additionalTotal;
 
       await createInvoice({ 
@@ -587,22 +677,24 @@ const ProjectDetails: React.FC = () => {
                   }}>Edit Details</Button>
                 </Box>
                 
-                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr 1fr' }, gap: 4, mb: 4 }}>
+                 <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr 1fr' }, gap: 4, mb: 4 }}>
                   {project.customerPhoto && (
-                    <Box sx={{ gridColumn: 'span 3', display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-                      <Avatar 
-                        src={project.customerPhoto} 
-                        alt="Client Photo" 
-                        variant="rounded"
-                        sx={{ width: 100, height: 100, border: '2px solid #E8E1D5', boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.05)' }} 
-                      />
-                      <Box>
-                        <Typography variant="subtitle1" fontWeight="bold">Client Photo</Typography>
-                        <Typography variant="caption" color="text.secondary">Attached client profile photo</Typography>
+                    <Box sx={{ gridColumn: 'span 3', display: 'flex', flexDirection: 'column', gap: 1, mb: 2 }}>
+                      <Typography variant="subtitle1" fontWeight="bold">Client Photos</Typography>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                        {project.customerPhoto.split(',').filter(Boolean).map((photoUrl, idx) => (
+                          <Avatar 
+                            key={idx}
+                            src={photoUrl} 
+                            alt={`Client Photo ${idx + 1}`} 
+                            variant="rounded"
+                            onClick={() => setPreviewFileUrl(photoUrl)}
+                            sx={{ width: 100, height: 100, border: '2px solid #E8E1D5', boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.05)', cursor: 'pointer', '&:hover': { opacity: 0.8 } }} 
+                          />
+                        ))}
                       </Box>
                     </Box>
-                  )}
-                  <Box>
+                  )}                  <Box>
                     <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ textTransform: 'uppercase', letterSpacing: 1 }}>Enquiry ID / Project</Typography>
                     <Typography variant="body1" fontWeight={500} mt={0.5} color="primary.main">{project.projectId}</Typography>
                     <Typography variant="body2">{project.name}</Typography>
@@ -621,7 +713,7 @@ const ProjectDetails: React.FC = () => {
                   </Box>
                   <Box>
                     <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ textTransform: 'uppercase', letterSpacing: 1 }}>Date</Typography>
-                    <Typography variant="body1" fontWeight={500} mt={0.5}>{new Date(project.createdAt).toLocaleDateString('en-GB')}</Typography>
+                    <Typography variant="body1" fontWeight={500} mt={0.5}>{new Date(project.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' })}</Typography>
                   </Box>
                 </Box>
 
@@ -635,12 +727,18 @@ const ProjectDetails: React.FC = () => {
                 </Box>
 
                 <Divider sx={{ my: 4 }} />
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+                  <Button variant="outlined" size="large" onClick={() => {
+                    setSnackbarMessage('Enquiry Details progress saved!');
+                    if (viewingStepOverride !== null) setViewingStepOverride(null);
+                  }} sx={{ px: 4, py: 1.5, borderRadius: 2 }}>
+                    {viewingStepOverride !== null ? 'Save Changes' : 'Save Progress'}
+                  </Button>
                   <Button variant="contained" size="large" onClick={() => {
                     if (viewingStepOverride !== null) setViewingStepOverride(null);
                     else handleNextStage('design_sharing');
                   }} sx={{ px: 4, py: 1.5, borderRadius: 2 }}>
-                    Proceed to Reference Image
+                    {viewingStepOverride !== null ? 'Back to Active Step' : 'Proceed to Reference Image'}
                   </Button>
                 </Box>
               </Paper>
@@ -653,7 +751,7 @@ const ProjectDetails: React.FC = () => {
                   <Box>
                     <Typography variant="h5" fontWeight="bold" color="text.primary">Reference Image</Typography>
                     <Typography variant="body1" color="text.secondary" mt={1}>Upload the finalized reference design images, material choices, and inspiration photos.</Typography>
-                    <Typography variant="body2" color="text.secondary" mt={1}><strong>Current Date:</strong> {new Date().toLocaleDateString('en-GB')}</Typography>
+                    <Typography variant="body2" color="text.secondary" mt={1}><strong>Current Date:</strong> {new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' })}</Typography>
                   </Box>
                   
                   {/* Custom Upload & Camera Buttons Aligned Right */}
@@ -747,7 +845,7 @@ const ProjectDetails: React.FC = () => {
                         <Box sx={{ flex: 1 }}>
                           <Typography variant="subtitle1" fontWeight="bold">{drawing.title} (v{drawing.version})</Typography>
                           {drawing.comments && <Typography variant="body2" color="text.secondary">Comments: {drawing.comments}</Typography>}
-                          <Typography variant="caption" color="text.secondary">{new Date(drawing.createdAt).toLocaleDateString()}</Typography>
+                          <Typography variant="caption" color="text.secondary">{new Date(drawing.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' })}</Typography>
                           <Typography 
                             onClick={() => setPreviewFileUrl(drawing.fileUrl)} 
                             sx={{ color: '#1976d2', textDecoration: 'underline', fontSize: 14, cursor: 'pointer', mt: 0.5, display: 'block', width: 'fit-content' }}
@@ -771,9 +869,25 @@ const ProjectDetails: React.FC = () => {
                   }} sx={{ px: 4, py: 1.5, borderRadius: 2 }}>
                     Back
                   </Button>
-                  <Button variant="contained" size="large" onClick={handleFreezeDesign} disabled={isUploading} sx={{ px: 4, py: 1.5, borderRadius: 2 }}>
-                    {isUploading ? 'Saving & Proceeding...' : 'Proceed to Costing'}
-                  </Button>
+                  <Box sx={{ display: 'flex', gap: 2 }}>
+                    <Button variant="outlined" size="large" onClick={async () => {
+                      try {
+                         await updateProject({ id: id as string, data: { startDate: designFinalizedDate ? new Date(designFinalizedDate).toISOString() : null } }).unwrap();
+                         setSnackbarMessage('Progress saved successfully!');
+                         if (viewingStepOverride !== null) setViewingStepOverride(null);
+                      } catch(e) {
+                         setSnackbarMessage('Failed to save progress.');
+                      }
+                    }} disabled={isUploading} sx={{ px: 4, py: 1.5, borderRadius: 2 }}>
+                      {viewingStepOverride !== null ? 'Save Changes' : 'Save Progress'}
+                    </Button>
+                    <Button variant="contained" size="large" onClick={() => {
+                       if (viewingStepOverride !== null) setViewingStepOverride(null);
+                       else handleFreezeDesign();
+                    }} disabled={isUploading} sx={{ px: 4, py: 1.5, borderRadius: 2 }}>
+                      {viewingStepOverride !== null ? 'Back to Active Step' : (isUploading ? 'Saving & Proceeding...' : 'Proceed to Costing')}
+                    </Button>
+                  </Box>
                 </Box>
               </Paper>
             )}
@@ -794,8 +908,9 @@ const ProjectDetails: React.FC = () => {
                         <TableRow>
                           <TableCell sx={{ py: 1.5, fontWeight: 'bold', color: 'text.secondary' }}>Category</TableCell>
                           <TableCell sx={{ py: 1.5, fontWeight: 'bold', color: 'text.secondary' }}>Unit</TableCell>
-                          <TableCell sx={{ py: 1.5, fontWeight: 'bold', color: 'text.secondary' }}>Length</TableCell>
-                          <TableCell sx={{ py: 1.5, fontWeight: 'bold', color: 'text.secondary' }}>Width</TableCell>
+                          <TableCell sx={{ py: 1.5, fontWeight: 'bold', color: 'text.secondary' }}>Length (L)</TableCell>
+                          <TableCell sx={{ py: 1.5, fontWeight: 'bold', color: 'text.secondary' }}>Width (W)</TableCell>
+                          <TableCell sx={{ py: 1.5, fontWeight: 'bold', color: 'text.secondary' }}>Breadth (B)</TableCell>
                           <TableCell sx={{ py: 1.5, fontWeight: 'bold', color: 'text.secondary' }}>Qty</TableCell>
                           <TableCell sx={{ py: 1.5, fontWeight: 'bold', color: 'text.secondary' }}>Rate</TableCell>
                           <TableCell sx={{ py: 1.5, fontWeight: 'bold', color: 'text.secondary' }}>Amount</TableCell>
@@ -805,13 +920,59 @@ const ProjectDetails: React.FC = () => {
                       <TableBody>
                         {products.map(p => (
                           <TableRow key={p.id} sx={{ '& td': { borderBottom: '1px solid #F0F0F0', py: 1.5 } }}>
-                            <TableCell><Typography variant="body2">{p.category}</Typography></TableCell>
+                            <TableCell>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                {p.photo ? (
+                                  <Avatar 
+                                    src={p.photo} 
+                                    variant="rounded" 
+                                    onClick={() => setPreviewFileUrl(p.photo!)}
+                                    sx={{ width: 40, height: 40, border: '1px solid #E8E1D5', cursor: 'pointer', '&:hover': { opacity: 0.8 } }}
+                                  />
+                                ) : (
+                                  <Box 
+                                    sx={{ 
+                                      width: 40, 
+                                      height: 40, 
+                                      border: '1px dashed #CCC', 
+                                      borderRadius: 1.5, 
+                                      display: 'flex', 
+                                      alignItems: 'center', 
+                                      justifyContent: 'center',
+                                      bgcolor: '#FAFAFA'
+                                    }}
+                                  >
+                                    <ImageIcon sx={{ fontSize: '1.2rem', color: '#AAA' }} />
+                                  </Box>
+                                )}
+                                <Box>
+                                  <Typography variant="body2">{p.category}</Typography>
+                                  <Button 
+                                    size="small" 
+                                    variant="text" 
+                                    sx={{ fontSize: '0.7rem', p: 0, minWidth: 'auto', mt: 0.5, color: 'primary.main', textTransform: 'none' }}
+                                    onClick={() => {
+                                      setActiveCostProductId(p.id);
+                                      if (!quoteDetails[p.id]) {
+                                        setQuoteDetails(prev => ({ ...prev, [p.id]: getDefaultCosts() }));
+                                      }
+                                      setIsCategoryCostsDialogOpen(true);
+                                    }}
+                                  >
+                                    + Add Costs
+                                  </Button>
+                                </Box>
+                              </Box>
+                            </TableCell>
                             <TableCell><Typography variant="body2">{p.unit}</Typography></TableCell>
                             <TableCell>
                               {p.unit !== 'Pieces' ? <Typography variant="body2">{p.length}</Typography> : <Typography variant="body2" color="text.secondary">-</Typography>}
                             </TableCell>
                             <TableCell>
                               {p.unit !== 'Pieces' ? <Typography variant="body2">{p.width}</Typography> : <Typography variant="body2" color="text.secondary">-</Typography>}
+                            </TableCell>
+                            <TableCell>
+                              {p.unit !== 'Pieces' ? <Typography variant="body2">{p.breadth || 0}</Typography> : <Typography variant="body2" color="text.secondary">-</Typography>}
                             </TableCell>
                             <TableCell><Typography variant="body2">{p.qty}</Typography></TableCell>
                             <TableCell><Typography variant="body2">₹{p.rate.toLocaleString('en-IN')}</Typography></TableCell>
@@ -833,20 +994,6 @@ const ProjectDetails: React.FC = () => {
                   </Box>
                 </Box>
 
-                <Typography variant="h6" fontWeight="bold" mb={2}>Additional Costs</Typography>
-                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: '1fr 1fr 1fr' }, gap: 3, mb: 4 }}>
-                  {Object.keys(quoteDetails).map((key) => (
-                    <TextField 
-                      key={key}
-                      fullWidth 
-                      type="number"
-                      label={key.replace(/([A-Z])/g, ' $1').trim().replace(/^\w/, c => c.toUpperCase())} 
-                      value={(quoteDetails as any)[key] === 0 ? '' : (quoteDetails as any)[key]}
-                      onChange={(e) => setQuoteDetails({ ...quoteDetails, [key]: Number(e.target.value) })}
-                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-                    />
-                  ))}
-                </Box>
 
                 {/* DYNAMIC ESTIMATED TOTAL QUOTE BOX WITH REAL-TIME BREAKDOWN */}
                 <Box sx={{ 
@@ -859,34 +1006,12 @@ const ProjectDetails: React.FC = () => {
                     <Typography variant="body1" sx={{ color: '#E8E1D5' }}>Total Products Amount:</Typography>
                     <Typography variant="body1" sx={{ fontWeight: 'bold' }}>₹{products.reduce((acc, p) => acc + p.amount, 0).toLocaleString('en-IN')}</Typography>
                   </Box>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                    <Typography variant="body1" sx={{ color: '#E8E1D5' }}>Total Additional Costs:</Typography>
-                    <Typography variant="body1" sx={{ fontWeight: 'bold' }}>+ ₹{(
-                      (quoteDetails.materialCost || 0) + 
-                      (quoteDetails.cncCost || 0) + 
-                      (quoteDetails.handCarvingCost || 0) + 
-                      (quoteDetails.inlayCost || 0) + 
-                      (quoteDetails.polishingCost || 0) + 
-                      (quoteDetails.packingCost || 0) + 
-                      (quoteDetails.transportCost || 0) + 
-                      (quoteDetails.installationCost || 0)
-                    ).toLocaleString('en-IN')}</Typography>
-                  </Box>
                   <Divider sx={{ borderColor: 'rgba(255,255,255,0.1)', mb: 2 }} />
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Typography variant="h6" sx={{ color: '#E8E1D5', fontWeight: 500 }}>Estimated Total Quote:</Typography>
                     <Typography variant="h4" sx={{ color: '#E5C07B', fontWeight: 'bold' }}>
                       ₹{
-                        (products.reduce((acc, p) => acc + p.amount, 0) + 
-                         (quoteDetails.materialCost || 0) + 
-                         (quoteDetails.cncCost || 0) + 
-                         (quoteDetails.handCarvingCost || 0) + 
-                         (quoteDetails.inlayCost || 0) + 
-                         (quoteDetails.polishingCost || 0) + 
-                         (quoteDetails.packingCost || 0) + 
-                         (quoteDetails.transportCost || 0) + 
-                         (quoteDetails.installationCost || 0)
-                        ).toLocaleString('en-IN')
+                        (products.reduce((acc, p) => acc + p.amount, 0)).toLocaleString('en-IN')
                       }
                     </Typography>
                   </Box>
@@ -900,14 +1025,25 @@ const ProjectDetails: React.FC = () => {
                     Back
                   </Button>
                   <Box sx={{ display: 'flex', gap: 2 }}>
+                    <Button variant="outlined" size="large" onClick={() => {
+                      // Triggering a save draft (localStorage) which is already handled via useEffect,
+                      // or we can just notify user.
+                      setSnackbarMessage('Quotation progress saved!');
+                      if (viewingStepOverride !== null) setViewingStepOverride(null);
+                    }} sx={{ px: 4, py: 1.5, borderRadius: 2 }}>
+                      {viewingStepOverride !== null ? 'Save Changes' : 'Save Progress'}
+                    </Button>
                     <Button variant="outlined" size="large" onClick={() => generateQuotationPDF(project, products, quoteDetails)} sx={{ px: 4, py: 1.5, borderRadius: 2 }}>
                       Download PDF
                     </Button>
                     <Button variant="contained" size="large" onClick={async () => {
-                      await handleCreateQuotation();
-                      if (viewingStepOverride !== null) setViewingStepOverride(null);
+                      if (viewingStepOverride !== null) {
+                         setViewingStepOverride(null);
+                      } else {
+                         await handleCreateQuotation();
+                      }
                     }} sx={{ px: 4, py: 1.5, borderRadius: 2 }}>
-                      Save & Generate Quotation
+                      {viewingStepOverride !== null ? 'Back to Active Step' : 'Save & Generate Quotation'}
                     </Button>
                   </Box>
                 </Box>
@@ -966,9 +1102,24 @@ const ProjectDetails: React.FC = () => {
                   }} sx={{ px: 4, py: 1.5, borderRadius: 2 }}>
                     Back
                   </Button>
-                  <Button variant="contained" color="success" size="large" onClick={handleAdvancePayment} startIcon={<CheckCircleIcon />} sx={{ px: 4, py: 1.5, borderRadius: 2, bgcolor: '#2E7D32', '&:hover': { bgcolor: '#1B5E20' } }}>
-                    Confirm & Proceed to Shop Drawings
-                  </Button>
+                  <Box sx={{ display: 'flex', gap: 2 }}>
+                    <Button variant="outlined" size="large" onClick={async () => {
+                        // Saving payment details locally in state. Actual invoice generation happens on proceed.
+                        localStorage.setItem(`paymentDraft_${id}`, JSON.stringify({
+                          advancePayment, paymentDate, paymentMethod
+                        }));
+                        setSnackbarMessage('Payment progress saved!');
+                        if (viewingStepOverride !== null) setViewingStepOverride(null);
+                    }} sx={{ px: 4, py: 1.5, borderRadius: 2 }}>
+                      {viewingStepOverride !== null ? 'Save Changes' : 'Save Progress'}
+                    </Button>
+                    <Button variant="contained" color="success" size="large" onClick={() => {
+                       if (viewingStepOverride !== null) setViewingStepOverride(null);
+                       else handleAdvancePayment();
+                    }} startIcon={viewingStepOverride !== null ? null : <CheckCircleIcon />} sx={{ px: 4, py: 1.5, borderRadius: 2, bgcolor: viewingStepOverride !== null ? 'primary.main' : '#2E7D32', '&:hover': { bgcolor: viewingStepOverride !== null ? 'primary.dark' : '#1B5E20' } }}>
+                      {viewingStepOverride !== null ? 'Back to Active Step' : 'Confirm & Proceed to Shop Drawings'}
+                    </Button>
+                  </Box>
                 </Box>
               </Paper>
             )}
@@ -980,7 +1131,7 @@ const ProjectDetails: React.FC = () => {
                   <Box>
                     <Typography variant="h5" fontWeight="bold" color="text.primary">Shop Drawing & Design Approval</Typography>
                     <Typography variant="body1" color="text.secondary" mt={1}>Upload final shop drawings, production layouts, and 3D renders.</Typography>
-                    <Typography variant="body2" color="text.secondary" mt={1}><strong>Date:</strong> {new Date().toLocaleDateString('en-GB')}</Typography>
+                    <Typography variant="body2" color="text.secondary" mt={1}><strong>Date:</strong> {new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' })}</Typography>
                   </Box>
                   
                   {/* Custom Upload & Camera Buttons Aligned Right */}
@@ -1063,7 +1214,7 @@ const ProjectDetails: React.FC = () => {
                         <Box sx={{ flex: 1 }}>
                           <Typography variant="subtitle1" fontWeight="bold">{drawing.title} (v{drawing.version})</Typography>
                           {drawing.comments && <Typography variant="body2" color="text.secondary">Comments: {drawing.comments}</Typography>}
-                          <Typography variant="caption" color="text.secondary">{new Date(drawing.createdAt).toLocaleDateString()}</Typography>
+                          <Typography variant="caption" color="text.secondary">{new Date(drawing.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' })}</Typography>
                           <Typography 
                             onClick={() => setPreviewFileUrl(drawing.fileUrl)} 
                             sx={{ color: '#1976d2', textDecoration: 'underline', fontSize: 14, cursor: 'pointer', mt: 0.5, display: 'block', width: 'fit-content' }}
@@ -1087,14 +1238,26 @@ const ProjectDetails: React.FC = () => {
                   }} sx={{ px: 4, py: 1.5, borderRadius: 2 }}>
                     Back
                   </Button>
-                  <Button variant="contained" color="success" size="large" onClick={async () => {
-                    await updateProject({ id: id as string, data: { status: 'material_planning' } }).unwrap();
-                    setActiveStep(5);
-                    setViewingStepOverride(null);
-                    refetch();
-                  }} sx={{ px: 4, py: 1.5, borderRadius: 2, bgcolor: '#2E7D32', '&:hover': { bgcolor: '#1B5E20' } }}>
-                    Proceed to Material Planning
-                  </Button>
+                  <Box sx={{ display: 'flex', gap: 2 }}>
+                    <Button variant="outlined" size="large" onClick={() => {
+                       setSnackbarMessage('Shop Drawing progress saved!');
+                       if (viewingStepOverride !== null) setViewingStepOverride(null);
+                    }} sx={{ px: 4, py: 1.5, borderRadius: 2 }}>
+                      {viewingStepOverride !== null ? 'Save Changes' : 'Save Progress'}
+                    </Button>
+                    <Button variant="contained" color="success" size="large" onClick={async () => {
+                      if (viewingStepOverride !== null) {
+                         setViewingStepOverride(null);
+                      } else {
+                         await updateProject({ id: id as string, data: { status: 'material_planning' } }).unwrap();
+                         setActiveStep(5);
+                         setViewingStepOverride(null);
+                         refetch();
+                      }
+                    }} sx={{ px: 4, py: 1.5, borderRadius: 2, bgcolor: viewingStepOverride !== null ? 'primary.main' : '#2E7D32', '&:hover': { bgcolor: viewingStepOverride !== null ? 'primary.dark' : '#1B5E20' } }}>
+                      {viewingStepOverride !== null ? 'Back to Active Step' : 'Proceed to Material Planning'}
+                    </Button>
+                  </Box>
                 </Box>
               </Paper>
             )}
@@ -1167,41 +1330,58 @@ const ProjectDetails: React.FC = () => {
                   }} sx={{ px: 4, py: 1.5, borderRadius: 2 }}>
                     Back
                   </Button>
-                  <Button variant="contained" size="large" onClick={async () => {
-                    await updateProject({ id: id as string, data: { status: 'production' } }).unwrap();
-                    setActiveStep(6);
-                    setViewingStepOverride(null);
-                    refetch();
-                  }} sx={{ px: 4, py: 1.5, borderRadius: 2 }}>
-                    Proceed to Production
-                  </Button>
+                  <Box sx={{ display: 'flex', gap: 2 }}>
+                    <Button variant="outlined" size="large" onClick={() => {
+                       setSnackbarMessage('Material Planning progress saved!');
+                       if (viewingStepOverride !== null) setViewingStepOverride(null);
+                    }} sx={{ px: 4, py: 1.5, borderRadius: 2 }}>
+                      {viewingStepOverride !== null ? 'Save Changes' : 'Save Progress'}
+                    </Button>
+                    <Button variant="contained" size="large" onClick={async () => {
+                      if (viewingStepOverride !== null) {
+                         setViewingStepOverride(null);
+                      } else {
+                         await updateProject({ id: id as string, data: { status: 'production' } }).unwrap();
+                         setActiveStep(6);
+                         setViewingStepOverride(null);
+                         refetch();
+                      }
+                    }} sx={{ px: 4, py: 1.5, borderRadius: 2 }}>
+                      {viewingStepOverride !== null ? 'Back to Active Step' : 'Proceed to Production'}
+                    </Button>
+                  </Box>
                 </Box>
               </Paper>
             )}
 
             {/* STEP 6: PRODUCTION MANAGEMENT */}
             {stepToRender === 6 && (
-              <Paper elevation={0} sx={{ p: { xs: 3, md: 5 }, border: '1px solid', borderColor: '#E8E1D5', borderRadius: 4, boxShadow: '0px 4px 20px rgba(0, 0, 0, 0.02)' }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 4 }}>
-                  <Box>
-                    <Typography variant="h5" fontWeight="bold" color="text.primary">Production Management</Typography>
-                    <Typography variant="body2" color="text.secondary">Live tracking of machine logs and worker reports for this project.</Typography>
-                  </Box>
-                  <Button variant="outlined" size="small" onClick={() => {
-                    if (viewingStepOverride !== null) setViewingStepOverride(null);
-                    else handleNextStage('material_planning');
-                  }} sx={{ borderRadius: 2 }}>
-                    Go Back
-                  </Button>
-                </Box>
+              <Box sx={{ width: '100%' }}>
+                {viewingStepOverride !== null && (
+                   <Button startIcon={<ArrowBackIcon />} variant="text" size="small" onClick={() => setViewingStepOverride(null)} sx={{ mb: 3 }}>
+                     Back to Pipeline
+                   </Button>
+                )}
 
-                <Box sx={{ mb: 6 }}>
-                  <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: '#E8E1D5', borderRadius: 3, overflow: 'hidden' }}>
+                {/* Production Tabs */}
+                <Paper sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+                  <Tabs value={productionTab} onChange={(e, v) => setProductionTab(v)}>
+                    <Tab label="Machine Usage" sx={{ fontWeight: 'bold' }} />
+                    <Tab label="Material Ledger" sx={{ fontWeight: 'bold' }} />
+                  </Tabs>
+                </Paper>
+
+                {/* TAB 0: Machine Usage */}
+                {productionTab === 0 && (
+                 <Box sx={{ mb: 6 }}>
+                  <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 4, overflow: 'hidden' }}>
                     <Table>
                       <TableHead sx={{ bgcolor: '#FDFBF7' }}>
                         <TableRow>
                           <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2 }}>Machine Name</TableCell>
-                          <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2 }}>Operator</TableCell>
+                          <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2 }}>Category / Product Name</TableCell>
+                          <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2, width: '15%' }}>Qty (Done / Total)</TableCell>
+
                           <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2 }}>Punch In</TableCell>
                           <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2 }}>Punch Out</TableCell>
                           <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2 }}>Total Hours</TableCell>
@@ -1210,103 +1390,249 @@ const ProjectDetails: React.FC = () => {
                         </TableRow>
                       </TableHead>
                       <TableBody>
-                        {machineLogsLoading ? (
-                          <TableRow><TableCell colSpan={7} align="center" sx={{ py: 5 }}>Loading...</TableCell></TableRow>
-                        ) : projectMachineLogs.length === 0 ? (
-                          <TableRow><TableCell colSpan={7} align="center" sx={{ py: 5, color: 'text.secondary' }}>No machine logs for this project yet.</TableCell></TableRow>
-                        ) : projectMachineLogs.map((log: any, idx: number) => (
-                          <TableRow key={log.id} sx={{ bgcolor: idx % 2 === 0 ? '#FFFFFF' : '#FAFAFA', '&:hover': { bgcolor: '#F0F7F0' } }}>
-                            <TableCell sx={{ fontWeight: 500 }}>{log.machine?.name}</TableCell>
-                            <TableCell>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Avatar sx={{ width: 24, height: 24, bgcolor: 'primary.light', fontSize: '0.8rem' }}>
-                                  {log.operator?.name?.charAt(0) || '?'}
-                                </Avatar>
-                                {log.operator?.name || 'N/A'}
-                              </Box>
-                            </TableCell>
-                            <TableCell sx={{ color: 'text.secondary' }}>{new Date(log.startTime).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })}</TableCell>
-                            <TableCell sx={{ color: 'text.secondary' }}>{log.endTime ? new Date(log.endTime).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' }) : '-'}</TableCell>
-                            <TableCell sx={{ fontWeight: 'bold', color: '#2E7D32' }}>
-                              {log.endTime 
-                                ? ((new Date(log.endTime).getTime() - new Date(log.startTime).getTime()) / (1000 * 60 * 60)).toFixed(2) + 'h'
-                                : '-'}
-                            </TableCell>
-                            <TableCell>
-                              <Chip 
-                                label={log.status.toUpperCase()} 
-                                color={log.status === 'active' ? 'warning' : 'success'} 
-                                size="small" 
-                                variant={log.status === 'active' ? 'filled' : 'outlined'}
-                                sx={{ fontWeight: 'bold', fontSize: '0.7rem' }} 
-                              />
-                            </TableCell>
-                            <TableCell sx={{ maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={log.remarks || ''}>
-                              {log.remarks || '-'}
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                        {(() => {
+                          if (machineLogsLoading) {
+                            return <TableRow><TableCell colSpan={6} align="center" sx={{ py: 5 }}>Loading...</TableCell></TableRow>;
+                          }
+                          const tableRows: any[] = [];
+                          
+                          // 1. Standalone logs (no product selected)
+                          if (projectMachineLogs) {
+                            projectMachineLogs.filter((l: any) => !l.productId).forEach((log: any) => {
+                              tableRows.push({ type: 'unassigned_log', log });
+                            });
+                          }
+                          
+                          // 2. Product pieces
+                          if (products) {
+                            products.forEach((product: any) => {
+                              const totalQty = product.qty || 1;
+                              const productLogs = (projectMachineLogs || [])
+                                .filter((l: any) => l.productId === product.id)
+                                .sort((a: any, b: any) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+                                
+                              let completedCount = 0;
+                              
+                              productLogs.filter((l: any) => l.status === 'completed').forEach((log: any) => {
+                                const qty = log.quantityProduced || 1;
+                                for (let i = 0; i < qty; i++) {
+                                  completedCount++;
+                                  tableRows.push({ type: 'piece', product, pieceNumber: completedCount, status: 'completed', log });
+                                }
+                              });
+                              
+                              let activeCount = completedCount;
+                              productLogs.filter((l: any) => l.status === 'active').forEach((log: any) => {
+                                activeCount++;
+                                tableRows.push({ type: 'piece', product, pieceNumber: activeCount, status: 'active', log });
+                              });
+                              
+                              for (let i = activeCount + 1; i <= totalQty; i++) {
+                                tableRows.push({ type: 'piece', product, pieceNumber: i, status: 'pending', log: null });
+                              }
+                            });
+                          }
+                          
+                          if (tableRows.length === 0) {
+                            return <TableRow><TableCell colSpan={6} align="center" sx={{ py: 5, color: 'text.secondary' }}>No machines or products found for this project yet.</TableCell></TableRow>;
+                          }
+
+                          // Sort rows to show most recent activity at the top
+                          tableRows.sort((a, b) => {
+                            const aHasLog = !!a.log;
+                            const bHasLog = !!b.log;
+                            
+                            if (aHasLog && bHasLog) {
+                               return new Date(b.log.startTime).getTime() - new Date(a.log.startTime).getTime();
+                            }
+                            
+                            if (aHasLog && !bHasLog) return -1;
+                            if (!aHasLog && bHasLog) return 1;
+                            
+                            // Both pending: sort by product name, then piece number
+                            const aName = a.product?.name || a.product?.category || '';
+                            const bName = b.product?.name || b.product?.category || '';
+                            if (aName !== bName) {
+                               return aName.localeCompare(bName);
+                            }
+                            return (a.pieceNumber || 0) - (b.pieceNumber || 0);
+                          });
+                          
+                          return tableRows.map((row: any, idx: number) => {
+                            if (row.type === 'unassigned_log') {
+                              const log = row.log;
+                              return (
+                                <TableRow key={`ulog-${log.id}`} sx={{ bgcolor: idx % 2 === 0 ? '#FFFFFF' : '#FAFAFA', '&:hover': { bgcolor: '#F0F7F0' } }}>
+                                  <TableCell sx={{ fontWeight: 'bold', fontSize: '0.95rem', color: 'text.primary' }}>{log.machine?.name || 'Manual (No Machine)'}</TableCell>
+                                  <TableCell>
+                                    {log.productName ? (
+                                      <Typography variant="body2" fontWeight="bold" sx={{ fontSize: '0.95rem' }}>{log.productName}</Typography>
+                                    ) : (
+                                      <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '0.95rem', color: 'text.secondary' }}>-</Typography>
+                                    )}
+                                  </TableCell>
+                                  <TableCell align="center" sx={{ fontWeight: 'bold', fontSize: '0.95rem' }}>-</TableCell>
+                                  <TableCell sx={{ fontWeight: 'bold', fontSize: '0.95rem', color: 'text.primary' }}>{new Date(log.startTime).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase()}</TableCell>
+                                  <TableCell sx={{ fontWeight: 'bold', fontSize: '0.95rem', color: 'text.primary' }}>{log.endTime ? new Date(log.endTime).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase() : '-'}</TableCell>
+                                  <TableCell sx={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#2E7D32' }}>
+                                    {log.endTime ? ((new Date(log.endTime).getTime() - new Date(log.startTime).getTime()) / (1000 * 60 * 60)).toFixed(2) + 'h' : '-'}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Chip label={log.status.toUpperCase()} color={log.status === 'active' ? 'warning' : 'success'} size="small" variant={log.status === 'active' ? 'filled' : 'outlined'} sx={{ fontWeight: 'bold', fontSize: '0.75rem' }} />
+                                  </TableCell>
+                                  <TableCell sx={{ fontWeight: 'bold', fontSize: '0.95rem', color: 'text.primary', maxWidth: 150, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={log.remarks || ''}>
+                                    {log.remarks || '-'}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            } else {
+                              const { product, pieceNumber, status, log } = row;
+                              return (
+                                <TableRow key={`piece-${product.id}-${pieceNumber}`} sx={{ bgcolor: idx % 2 === 0 ? '#FFFFFF' : '#FAFAFA', '&:hover': { bgcolor: '#F0F7F0' } }}>
+                                  <TableCell sx={{ fontWeight: 'bold', fontSize: '0.95rem', color: status === 'pending' ? 'text.secondary' : 'text.primary', fontStyle: status === 'pending' ? 'italic' : 'normal' }}>
+                                    {log ? (log.machine?.name || 'Manual') : 'Not Started'}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Box>
+                                      <Typography variant="body2" fontWeight="bold" sx={{ fontSize: '0.95rem' }}>{product.name || product.category} <Typography component="span" sx={{ color: 'text.secondary', fontSize: '0.85rem' }}>(Piece {pieceNumber} / {product.qty || 1})</Typography></Typography>
+                                      {product.name && product.category && <Typography variant="caption" sx={{ fontWeight: 'bold', color: 'text.secondary', fontSize: '0.85rem' }}>{product.category}</Typography>}
+                                    </Box>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                        <Typography variant="caption" fontWeight="bold" color={status === 'completed' ? 'success.main' : 'primary'} sx={{ fontSize: '0.9rem' }}>
+                                          {status === 'completed' ? '1 / 1' : '0 / 1'}
+                                        </Typography>
+                                        <Typography variant="caption" sx={{ fontWeight: 'bold', color: 'text.secondary', fontSize: '0.9rem' }}>
+                                          {status === 'completed' ? '70%' : '0%'}
+                                        </Typography>
+                                      </Box>
+                                      <LinearProgress variant="determinate" value={status === 'completed' ? 70 : 0} color={status === 'completed' ? 'success' : 'primary'} sx={{ height: 6, borderRadius: 3 }} />
+                                    </Box>
+                                  </TableCell>
+                                  <TableCell sx={{ fontWeight: 'bold', fontSize: '0.95rem', color: 'text.primary' }}>
+                                    {log ? new Date(log.startTime).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase() : '-'}
+                                  </TableCell>
+                                  <TableCell sx={{ fontWeight: 'bold', fontSize: '0.95rem', color: 'text.primary' }}>
+                                    {(log && log.endTime) ? new Date(log.endTime).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase() : '-'}
+                                  </TableCell>
+                                  <TableCell sx={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#2E7D32' }}>
+                                    {(log && log.endTime) ? ((new Date(log.endTime).getTime() - new Date(log.startTime).getTime()) / (1000 * 60 * 60)).toFixed(2) + 'h' : '-'}
+                                  </TableCell>
+                                  <TableCell>
+                                    {status === 'completed' && <Chip label="COMPLETED" color="success" size="small" variant="outlined" sx={{ fontWeight: 'bold', fontSize: '0.75rem' }} />}
+                                    {status === 'active' && <Chip label="ACTIVE" color="warning" size="small" variant="filled" sx={{ fontWeight: 'bold', fontSize: '0.75rem' }} />}
+                                    {status === 'pending' && <Chip label="PENDING" size="small" variant="outlined" sx={{ fontWeight: 'bold', fontSize: '0.75rem', color: 'text.secondary', borderColor: 'divider' }} />}
+                                  </TableCell>
+                                  <TableCell sx={{ fontWeight: 'bold', fontSize: '0.95rem', color: 'text.primary', maxWidth: 150, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={log?.remarks || ''}>
+                                    {log?.remarks || '-'}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            }
+                          });
+                        })()}
                       </TableBody>
                     </Table>
-                  </TableContainer>
+                  </Paper>
                 </Box>
+                )}
 
-                <Box sx={{ mb: 6 }}>
-                  <Typography variant="h6" mb={2}>Approved Material Logs</Typography>
-                  <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: '#E8E1D5', borderRadius: 3, overflow: 'hidden' }}>
-                    <Table>
-                      <TableHead sx={{ bgcolor: '#FDFBF7' }}>
-                        <TableRow>
-                          <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2 }}>Transaction</TableCell>
-                          <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2 }}>Stage</TableCell>
-                          <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2 }}>Worker / Vendor</TableCell>
-                          <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2 }}>Qty</TableCell>
-                          <TableCell sx={{ fontWeight: 'bold', color: '#4A4A4A', py: 2 }}>Date Approved</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {(!productionLogs || productionLogs.filter((l: any) => l.approvalStatus === 'approved').length === 0) ? (
-                          <TableRow><TableCell colSpan={5} align="center" sx={{ py: 5, color: 'text.secondary' }}>No approved material logs yet.</TableCell></TableRow>
-                        ) : productionLogs.filter((l: any) => l.approvalStatus === 'approved').map((log: any, idx: number) => (
-                          <TableRow key={log.id} sx={{ bgcolor: idx % 2 === 0 ? '#FFFFFF' : '#FAFAFA', '&:hover': { bgcolor: '#F0F7F0' } }}>
-                            <TableCell>
-                              <Chip 
-                                label={log.transactionType === 'OUT' ? 'OUT' : 'IN'} 
-                                color={log.transactionType === 'OUT' ? 'warning' : 'info'} 
-                                size="small" 
-                                sx={{ fontWeight: 'bold', fontSize: '0.7rem' }} 
-                              />
-                            </TableCell>
-                            <TableCell>{log.stage}</TableCell>
-                            <TableCell>
-                              {log.vendorName ? (
-                                <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'secondary.main' }}>
-                                  {log.vendorName} (Vendor)
-                                </Typography>
-                              ) : (
-                                log.worker?.name || 'Unknown'
-                              )}
-                            </TableCell>
-                            <TableCell sx={{ fontWeight: 'bold' }}>{log.quantityProduced}</TableCell>
-                            <TableCell sx={{ color: 'text.secondary' }}>{new Date(log.updatedAt).toLocaleDateString()}</TableCell>
+                {/* TAB 1: Material Ledger */}
+                {productionTab === 1 && (
+                  <Box sx={{ mb: 6 }}>
+                    <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 4, overflow: 'hidden' }}>
+                      <Table>
+                        <TableHead sx={{ bgcolor: '#FAFAFA' }}>
+                          <TableRow>
+                            <TableCell sx={{ fontWeight: 800, fontSize: '0.75rem', color: 'text.secondary' }}>DATE OUT</TableCell>
+                            <TableCell sx={{ fontWeight: 800, fontSize: '0.75rem', color: 'text.secondary' }}>STAFF / VENDOR</TableCell>
+                            <TableCell sx={{ fontWeight: 800, fontSize: '0.75rem', color: 'text.secondary' }}>STAGE / WORK</TableCell>
+                            <TableCell align="center" sx={{ fontWeight: 800, fontSize: '0.75rem', color: 'text.secondary' }}>QTY OUT</TableCell>
+                            <TableCell align="center" sx={{ fontWeight: 800, fontSize: '0.75rem', color: 'text.secondary' }}>QTY IN</TableCell>
+                            <TableCell align="center" sx={{ fontWeight: 800, fontSize: '0.75rem', color: 'text.secondary' }}>PENDING</TableCell>
+                            <TableCell sx={{ fontWeight: 800, fontSize: '0.75rem', color: 'text.secondary' }}>STATUS</TableCell>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                </Box>
+                        </TableHead>
+                        <TableBody>
+                          {(!productionLogs || productionLogs.filter((l: any) => l.approvalStatus === 'approved' && l.transactionType === 'OUT').length === 0) ? (
+                            <TableRow><TableCell colSpan={7} align="center" sx={{ py: 5, color: 'text.secondary' }}>No material outward logs found for this project.</TableCell></TableRow>
+                          ) : productionLogs.filter((l: any) => l.approvalStatus === 'approved' && l.transactionType === 'OUT').map((log: any, idx: number) => {
+                            const qtyOut = log.quantityProduced || 0;
+                            const qtyIn = log.returnedQty || 0;
+                            const pending = Math.max(0, qtyOut - qtyIn);
+                            let statusLabel = 'PENDING'; let statusColor = 'error'; let progress = 0;
+                            if (qtyOut === 0) { statusLabel = 'PENDING'; statusColor = 'default'; }
+                            else if (qtyIn >= qtyOut) { statusLabel = 'COMPLETE'; statusColor = 'success'; progress = 100; }
+                            else if (qtyIn > 0) { statusLabel = 'PARTIAL'; statusColor = 'warning'; progress = Math.round((qtyIn / qtyOut) * 100); }
+                            
+                            return (
+                              <TableRow key={log.id} sx={{ '&:hover': { bgcolor: 'rgba(139,69,19,0.02)' } }}>
+                                <TableCell sx={{ fontWeight: 700, color: 'text.primary' }}>
+                                  {new Date(log.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                                </TableCell>
+                                <TableCell>
+                                  <Typography sx={{ fontWeight: 800, fontSize: '0.95rem', color: 'text.primary' }}>
+                                    {log.vendorName ? `${log.vendorName} (Vendor)` : log.worker?.name || 'Unknown'}
+                                  </Typography>
+                                </TableCell>
+                                <TableCell>
+                                  <Typography sx={{ fontWeight: 700, fontSize: '0.9rem', color: 'text.primary' }}>
+                                    {log.stage}
+                                  </Typography>
+                                </TableCell>
+                                <TableCell align="center">
+                                  <Chip label={qtyOut} sx={{ fontWeight: 900, bgcolor: 'rgba(237,108,2,0.1)', color: '#ed6c02', fontSize: '0.85rem' }} size="small" />
+                                </TableCell>
+                                <TableCell align="center">
+                                  <Chip label={qtyIn} sx={{ fontWeight: 900, bgcolor: qtyIn > 0 ? 'rgba(46,125,50,0.1)' : 'rgba(0,0,0,0.05)', color: qtyIn > 0 ? '#2E7D32' : 'text.secondary', fontSize: '0.85rem' }} size="small" />
+                                </TableCell>
+                                <TableCell align="center">
+                                  {pending > 0 ? (
+                                    <Box>
+                                      <Chip label={pending} color="error" size="small" sx={{ fontWeight: 900, fontSize: '0.85rem' }} />
+                                      <Box sx={{ mt: 0.5 }}>
+                                        <LinearProgress variant="determinate" value={progress} color={statusColor as any} sx={{ height: 4, borderRadius: 2, width: 60, mx: 'auto' }} />
+                                      </Box>
+                                    </Box>
+                                  ) : (
+                                    <Chip label="0" color="success" size="small" sx={{ fontWeight: 900 }} />
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <Chip label={statusLabel} color={statusColor as any} size="small" variant="outlined" sx={{ fontWeight: 700 }} />
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </Paper>
+                  </Box>
+                )}
 
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+                  <Button variant="outlined" size="large" onClick={() => {
+                     setSnackbarMessage('Work Order progress saved!');
+                     if (viewingStepOverride !== null) setViewingStepOverride(null);
+                  }} sx={{ px: 5, py: 1.5, borderRadius: 2, fontWeight: 'bold', fontSize: '1.1rem' }}>
+                    {viewingStepOverride !== null ? 'Save Changes' : 'Save Progress'}
+                  </Button>
                   <Button variant="contained" color="success" size="large" onClick={async () => {
-                    await updateProject({ id: id as string, data: { status: 'work_order' } }).unwrap();
-                    setActiveStep(7);
-                    setViewingStepOverride(null);
-                    refetch();
-                  }} sx={{ px: 5, py: 1.5, borderRadius: 2, bgcolor: '#2E7D32', '&:hover': { bgcolor: '#1B5E20' }, fontWeight: 'bold', fontSize: '1.1rem' }}>
-                    Finalize & Send to Dispatch
+                    if (viewingStepOverride !== null) {
+                       setViewingStepOverride(null);
+                    } else {
+                       await updateProject({ id: id as string, data: { status: 'work_order' } }).unwrap();
+                       setActiveStep(7);
+                       setViewingStepOverride(null);
+                       refetch();
+                    }
+                  }} sx={{ px: 5, py: 1.5, borderRadius: 2, bgcolor: viewingStepOverride !== null ? 'primary.main' : '#2E7D32', '&:hover': { bgcolor: viewingStepOverride !== null ? 'primary.dark' : '#1B5E20' }, fontWeight: 'bold', fontSize: '1.1rem' }}>
+                    {viewingStepOverride !== null ? 'Back to Active Step' : 'Finalize & Send to Dispatch'}
                   </Button>
                 </Box>
-              </Paper>
+              </Box>
             )}
 
             {/* STEP 7: WORK ORDER ACTIVE */}
@@ -1347,7 +1673,7 @@ const ProjectDetails: React.FC = () => {
                 const dbStep = project ? getStepIndex(project.status) : 0;
                 const isCompleted = dbStep > absoluteIndex;
                 const dateToShow = absoluteIndex === 0 ? project?.createdAt : project?.updatedAt;
-                const dateStr = dateToShow ? new Date(dateToShow).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '';
+                const dateStr = dateToShow ? new Date(dateToShow).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '';
 
                 return (
                 <Step key={label}>
@@ -1377,6 +1703,62 @@ const ProjectDetails: React.FC = () => {
               )})}
             </Stepper>
           </Paper>
+          
+          {stepToRender === 2 && (
+            <Paper elevation={0} sx={{ p: 4, mt: 3, border: '1px solid', borderColor: '#E8E1D5', borderRadius: 4, boxShadow: '0px 4px 20px rgba(0, 0, 0, 0.02)' }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6" fontWeight="bold" color="text.primary">Additional Costs</Typography>
+                <IconButton size="small" onClick={() => { setCustomCostName(''); setIsCostDialogOpen(true); }} sx={{ bgcolor: 'rgba(179, 139, 54, 0.1)', color: '#B38B36' }}><EditIcon fontSize="small" /></IconButton>
+              </Box>
+              <FormControl size="small" fullWidth sx={{ mb: 3 }}>
+                <Select
+                  displayEmpty
+                  value=""
+                  onChange={(e) => {
+                    const productId = e.target.value as string;
+                    if (productId) {
+                      setActiveCostProductId(productId);
+                      if (!quoteDetails[productId]) {
+                        setQuoteDetails(prev => ({ ...prev, [productId]: getDefaultCosts() }));
+                      }
+                      setIsCategoryCostsDialogOpen(true);
+                    }
+                  }}
+                  sx={{ bgcolor: '#FAFAFA', borderRadius: 2 }}
+                  disabled={products.length === 0}
+                >
+                  <MenuItem value="" disabled>Select Category to Add Costs</MenuItem>
+                  {products.map(p => (
+                    <MenuItem key={p.id} value={p.id}>{p.category}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {products.map(p => {
+                  const costs = quoteDetails[p.id] || [];
+                  const hasCosts = costs.some((c: any) => c.amount > 0);
+                  if (!hasCosts) return null;
+                  const totalCost = costs.reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0);
+                  return (
+                    <Box key={p.id} sx={{ p: 2, border: '1px solid #E8E1D5', borderRadius: 3, bgcolor: '#FFFDF5' }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                        <Typography variant="subtitle2" fontWeight="bold" color="#B38B36">{p.category}</Typography>
+                        <Box>
+                          <IconButton size="small" onClick={() => { setActiveCostProductId(p.id); if (!quoteDetails[p.id]) setQuoteDetails(prev => ({...prev, [p.id]: getDefaultCosts()})); setIsCategoryCostsDialogOpen(true); }}><EditIcon fontSize="small" sx={{color: 'primary.main'}}/></IconButton>
+                          <IconButton size="small" onClick={() => { if(window.confirm(`Are you sure you want to delete all costs for ${p.category}?`)) { setQuoteDetails(prev => { const newState = {...prev}; const list = newState[p.id] || getDefaultCosts(); newState[p.id] = list.map((c:any) => ({...c, amount: 0})); return newState; })}}}><DeleteIcon fontSize="small" sx={{color: 'error.main'}}/></IconButton>
+                        </Box>
+                      </Box>
+                      <Typography variant="h6" fontWeight="bold" sx={{ color: '#333' }}>₹{totalCost.toLocaleString('en-IN')}</Typography>
+                    </Box>
+                  )
+                })}
+                {products.length > 0 && Object.keys(quoteDetails).filter(k => quoteDetails[k]?.some((c: any) => c.amount > 0)).length === 0 && (
+                  <Typography variant="body2" color="text.secondary" textAlign="center" sx={{ py: 2 }}>No costs added yet.</Typography>
+                )}
+              </Box>
+            </Paper>
+          )}
+
         </Box>
         )}
 
@@ -1389,7 +1771,7 @@ const ProjectDetails: React.FC = () => {
         onClose={stopCamera} 
         maxWidth="md" 
         fullWidth
-        PaperProps={{ sx: { bgcolor: '#1A1C29', color: '#FFF', borderRadius: 4, border: '1px solid #333' } }}
+        slotProps={{ paper: { sx: { bgcolor: '#1A1C29', color: '#FFF', borderRadius: 4, border: '1px solid #333' } } }}
       >
         <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 'bold' }}>
           Take Photo
@@ -1479,111 +1861,127 @@ const ProjectDetails: React.FC = () => {
             onChange={(e) => setEditFormData({...editFormData, description: e.target.value})}
           />
           <Box>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontWeight: 'bold' }}>Client Photo</Typography>
-            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-              {editFormData.customerPhoto ? (
-                <Box sx={{ position: 'relative', width: 80, height: 80, border: '1px solid #CCC', borderRadius: 2, overflow: 'hidden' }}>
-                  <img src={editFormData.customerPhoto} alt="Client Photo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontWeight: 'bold' }}>Client Photos</Typography>
+            
+            {/* Grid of existing photos */}
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 2 }}>
+              {editFormData.customerPhoto ? editFormData.customerPhoto.split(',').filter(Boolean).map((photoUrl, idx) => (
+                <Box key={idx} sx={{ position: 'relative', width: 80, height: 80, border: '1px solid #CCC', borderRadius: 2, overflow: 'hidden' }}>
+                  <img src={photoUrl} alt={`Client Photo ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   <IconButton 
                     size="small" 
-                    onClick={() => setEditFormData({ ...editFormData, customerPhoto: '' })}
+                    onClick={() => {
+                      const photos = editFormData.customerPhoto.split(',').filter(Boolean);
+                      const updated = photos.filter((_, i) => i !== idx).join(',');
+                      setEditFormData({ ...editFormData, customerPhoto: updated });
+                    }}
                     sx={{ position: 'absolute', top: 2, right: 2, bgcolor: 'rgba(255, 255, 255, 0.7)', '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.9)' } }}
                   >
                     <CloseIcon fontSize="small" sx={{ color: 'error.main' }} />
                   </IconButton>
                 </Box>
-              ) : (
-                <Box sx={{ display: 'flex', gap: 2 }}>
-                  <Button
-                    variant="outlined"
-                    component="label"
-                    disabled={isUploading}
-                    sx={{ 
-                      height: 100, 
-                      width: 130, 
-                      border: '1.5px dashed #B38B36', 
-                      bgcolor: '#FFFDF5', 
-                      borderRadius: 3, 
-                      display: 'flex', 
-                      flexDirection: 'column', 
-                      fontSize: '0.82rem', 
-                      color: '#B38B36', 
-                      justifyContent: 'center', 
-                      alignItems: 'center',
-                      textTransform: 'none', 
-                      fontWeight: '600',
-                      boxShadow: '0 2px 8px rgba(179, 139, 54, 0.04)',
-                      transition: 'all 0.2s ease-in-out',
-                      '&:hover': { 
-                        borderColor: '#B38B36', 
-                        bgcolor: '#FFF4E5', 
-                        color: '#B38B36',
-                        transform: 'translateY(-2px)',
-                        boxShadow: '0 4px 12px rgba(179, 139, 54, 0.15)'
-                      } 
-                    }}
-                  >
-                    <CloudUploadIcon sx={{ fontSize: '1.75rem', mb: 0.5, color: '#B38B36' }} />
-                    {isUploading ? 'Uploading...' : 'Upload Photo'}
-                    <input
-                      type="file"
-                      hidden
-                      accept="image/*"
-                      onChange={async (e) => {
-                        if (e.target.files && e.target.files.length > 0) {
-                          setIsUploading(true);
-                          const file = e.target.files[0];
-                          const uploadData = new FormData();
-                          uploadData.append('files', file);
-                          try {
-                            const res = await uploadFiles(uploadData).unwrap();
-                            if (res.success && res.urls.length > 0) {
-                              setEditFormData({ ...editFormData, customerPhoto: res.urls[0] });
-                            }
-                          } catch (err) {
-                            console.error('Failed to upload client photo', err);
-                            setSnackbarMessage('Upload failed');
-                          } finally {
-                            setIsUploading(false);
-                          }
+              )) : null}
+            </Box>
+
+            {/* Upload & Take Photo buttons */}
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <Button
+                variant="outlined"
+                component="label"
+                disabled={isUploading}
+                sx={{ 
+                  height: 100, 
+                  width: 130, 
+                  border: '1.5px dashed #B38B36', 
+                  bgcolor: '#FFFDF5', 
+                  borderRadius: 3, 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  fontSize: '0.82rem', 
+                  color: '#B38B36', 
+                  justifyContent: 'center', 
+                  alignItems: 'center',
+                  textTransform: 'none', 
+                  fontWeight: '600',
+                  boxShadow: '0 2px 8px rgba(179, 139, 54, 0.04)',
+                  transition: 'all 0.2s ease-in-out',
+                  '&:hover': { 
+                    borderColor: '#B38B36', 
+                    bgcolor: '#FFF4E5', 
+                    color: '#B38B36',
+                    transform: 'translateY(-2px)',
+                    boxShadow: '0 4px 12px rgba(179, 139, 54, 0.15)'
+                  } 
+                }}
+              >
+                <CloudUploadIcon sx={{ fontSize: '1.75rem', mb: 0.5, color: '#B38B36' }} />
+                {isUploading ? 'Uploading...' : 'Upload Photo'}
+                <input
+                  type="file"
+                  hidden
+                  multiple
+                  accept="image/*"
+                  onChange={async (e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      setIsUploading(true);
+                      const filesArray = Array.from(e.target.files);
+                      const uploadPromises = filesArray.map(async (file) => {
+                        const uploadData = new FormData();
+                        uploadData.append('files', file);
+                        const res = await uploadFiles(uploadData).unwrap();
+                        return res.success && res.urls.length > 0 ? res.urls[0] : null;
+                      });
+                      try {
+                        const urls = await Promise.all(uploadPromises);
+                        const validUrls = urls.filter((url): url is string => !!url);
+                        if (validUrls.length > 0) {
+                          const existing = editFormData.customerPhoto ? editFormData.customerPhoto.split(',').filter(Boolean) : [];
+                          const updated = [...existing, ...validUrls].join(',');
+                          setEditFormData({ ...editFormData, customerPhoto: updated });
+                          setSnackbarMessage('Photos uploaded successfully!');
                         }
-                      }}
-                    />
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    disabled={isUploading}
-                    onClick={() => startCamera('clientPhoto')}
-                    sx={{ 
-                      height: 100, 
-                      width: 130, 
-                      border: '1.5px dashed #B38B36', 
-                      bgcolor: '#FFFDF5', 
-                      borderRadius: 3, 
-                      display: 'flex', 
-                      flexDirection: 'column', 
-                      fontSize: '0.82rem', 
-                      color: '#B38B36', 
-                      justifyContent: 'center', 
-                      alignItems: 'center',
-                      textTransform: 'none', 
-                      fontWeight: '600',
-                      boxShadow: '0 2px 8px rgba(179, 139, 54, 0.04)',
-                      transition: 'all 0.2s ease-in-out',
-                      '&:hover': { 
-                        borderColor: '#B38B36', 
-                        bgcolor: '#FFF4E5', 
-                        color: '#B38B36',
-                        transform: 'translateY(-2px)',
-                        boxShadow: '0 4px 12px rgba(179, 139, 54, 0.15)'
-                      } 
-                    }}
-                  >
-                    <CameraAltIcon sx={{ fontSize: '1.75rem', mb: 0.5, color: '#B38B36' }} />
-                    Take Photo
-                  </Button>
-                </Box>
-              )}
+                      } catch (err) {
+                        console.error('Failed to upload client photos', err);
+                        setSnackbarMessage('Upload failed');
+                      } finally {
+                        setIsUploading(false);
+                      }
+                    }
+                  }}
+                />
+              </Button>
+              <Button
+                variant="outlined"
+                disabled={isUploading}
+                onClick={() => startCamera('clientPhoto')}
+                sx={{ 
+                  height: 100, 
+                  width: 130, 
+                  border: '1.5px dashed #B38B36', 
+                  bgcolor: '#FFFDF5', 
+                  borderRadius: 3, 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  fontSize: '0.82rem', 
+                  color: '#B38B36', 
+                  justifyContent: 'center', 
+                  alignItems: 'center',
+                  textTransform: 'none', 
+                  fontWeight: '600',
+                  boxShadow: '0 2px 8px rgba(179, 139, 54, 0.04)',
+                  transition: 'all 0.2s ease-in-out',
+                  '&:hover': { 
+                    borderColor: '#B38B36', 
+                    bgcolor: '#FFF4E5', 
+                    color: '#B38B36',
+                    transform: 'translateY(-2px)',
+                    boxShadow: '0 4px 12px rgba(179, 139, 54, 0.15)'
+                  } 
+                }}
+              >
+                <CameraAltIcon sx={{ fontSize: '1.75rem', mb: 0.5, color: '#B38B36' }} />
+                Take Photo
+              </Button>
             </Box>
           </Box>
         </DialogContent>
@@ -1783,6 +2181,134 @@ const ProjectDetails: React.FC = () => {
                 </FormControl>
               </Box>
 
+              {/* Product Design Photo Upload/Camera section */}
+              <Box sx={{ mb: 3 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontWeight: 'bold' }}>Product Design Photo</Typography>
+                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                  {ep.photo && ep.photo.split(',').filter(Boolean).length > 0 ? (
+                    <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                      {ep.photo.split(',').filter(Boolean).map((photoUrl, photoIdx) => (
+                        <Box key={photoIdx} sx={{ position: 'relative', width: 80, height: 80, border: '1px solid #CCC', borderRadius: 2, overflow: 'hidden' }}>
+                          <img src={photoUrl} alt="Product Design" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          <IconButton 
+                            size="small" 
+                            onClick={() => {
+                              const photos = ep.photo!.split(',').filter(Boolean);
+                              const updated = photos.filter((_, i) => i !== photoIdx).join(',');
+                              handleUpdateEditingProduct(index, 'photo', updated);
+                            }}
+                            sx={{ position: 'absolute', top: 2, right: 2, bgcolor: 'rgba(255, 255, 255, 0.7)', '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.9)' } }}
+                          >
+                            <CloseIcon fontSize="small" sx={{ color: 'error.main' }} />
+                          </IconButton>
+                        </Box>
+                      ))}
+                    </Box>
+                  ) : null}
+                  <Box sx={{ display: 'flex', gap: 2 }}>
+                      <Button
+                        variant="outlined"
+                        component="label"
+                        disabled={isUploading}
+                        sx={{ 
+                          height: 80, 
+                          width: 120, 
+                          border: '1.5px dashed #B38B36', 
+                          bgcolor: '#FFFDF5', 
+                          borderRadius: 3, 
+                          display: 'flex', 
+                          flexDirection: 'column', 
+                          fontSize: '0.82rem', 
+                          color: '#B38B36', 
+                          justifyContent: 'center', 
+                          alignItems: 'center',
+                          textTransform: 'none', 
+                          fontWeight: '600',
+                          boxShadow: '0 2px 8px rgba(179, 139, 54, 0.04)',
+                          transition: 'all 0.2s ease-in-out',
+                          '&:hover': { 
+                            borderColor: '#B38B36', 
+                            bgcolor: '#FFF4E5', 
+                            color: '#B38B36',
+                            transform: 'translateY(-2px)',
+                            boxShadow: '0 4px 12px rgba(179, 139, 54, 0.15)'
+                          } 
+                        }}
+                      >
+                        <CloudUploadIcon sx={{ fontSize: '1.5rem', mb: 0.5, color: '#B38B36' }} />
+                        {isUploading ? 'Uploading...' : 'Upload Photo'}
+                        <input
+                          type="file"
+                          multiple
+                          hidden
+                          accept="image/*"
+                          onChange={async (e) => {
+                            if (e.target.files && e.target.files.length > 0) {
+                              setIsUploading(true);
+                              const filesArray = Array.from(e.target.files);
+                              const uploadPromises = filesArray.map(async (file) => {
+                                const uploadData = new FormData();
+                                uploadData.append('files', file);
+                                const res = await uploadFiles(uploadData).unwrap();
+                                return res.success && res.urls.length > 0 ? res.urls[0] : null;
+                              });
+                              try {
+                                const urls = await Promise.all(uploadPromises);
+                                const validUrls = urls.filter((url): url is string => !!url);
+                                if (validUrls.length > 0) {
+                                  const existing = ep.photo ? ep.photo.split(',').filter(Boolean) : [];
+                                  const updated = [...existing, ...validUrls].join(',');
+                                  handleUpdateEditingProduct(index, 'photo', updated);
+                                }
+                              } catch (err) {
+                                console.error('Failed to upload product photos', err);
+                                setSnackbarMessage('Upload failed');
+                              } finally {
+                                setIsUploading(false);
+                              }
+                            }
+                          }}
+                        />
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        disabled={isUploading}
+                        onClick={() => {
+                          setCameraProductIndex(index);
+                          startCamera('productPhoto');
+                        }}
+                        sx={{ 
+                          height: 80, 
+                          width: 120, 
+                          border: '1.5px dashed #B38B36', 
+                          bgcolor: '#FFFDF5', 
+                          borderRadius: 3, 
+                          display: 'flex', 
+                          flexDirection: 'column', 
+                          fontSize: '0.82rem', 
+                          color: '#B38B36', 
+                          justifyContent: 'center', 
+                          alignItems: 'center',
+                          textTransform: 'none', 
+                          fontWeight: '600',
+                          boxShadow: '0 2px 8px rgba(179, 139, 54, 0.04)',
+                          transition: 'all 0.2s ease-in-out',
+                          '&:hover': { 
+                            borderColor: '#B38B36', 
+                            bgcolor: '#FFF4E5', 
+                            color: '#B38B36',
+                            transform: 'translateY(-2px)',
+                            boxShadow: '0 4px 12px rgba(179, 139, 54, 0.15)'
+                          } 
+                        }}
+                      >
+                        <CameraAltIcon sx={{ fontSize: '1.5rem', mb: 0.5, color: '#B38B36' }} />
+                        Take Photo
+                      </Button>
+                    </Box>
+                </Box>
+              </Box>
+
               {ep.unit !== 'Pieces' && (
                 <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
                   <Box sx={{ flex: 1 }}>
@@ -1813,7 +2339,7 @@ const ProjectDetails: React.FC = () => {
                     value={ep.rate === 0 ? '' : ep.rate} 
                     onChange={e => handleUpdateEditingProduct(index, 'rate', Number(e.target.value))} 
                     fullWidth 
-                    InputProps={{ startAdornment: <Typography variant="body2" color="text.secondary" sx={{mr: 0.5}}>₹</Typography> } as any}
+                    slotProps={{ input: { startAdornment: <Typography variant="body2" color="text.secondary" sx={{mr: 0.5}}>₹</Typography> } as any }}
                   />
                 </Box>
               ) : (
@@ -1830,7 +2356,7 @@ const ProjectDetails: React.FC = () => {
                     value={ep.rate === 0 ? '' : ep.rate} 
                     onChange={e => handleUpdateEditingProduct(index, 'rate', Number(e.target.value))} 
                     fullWidth 
-                    InputProps={{ startAdornment: <Typography variant="body2" color="text.secondary" sx={{mr: 0.5}}>₹</Typography> } as any}
+                    slotProps={{ input: { startAdornment: <Typography variant="body2" color="text.secondary" sx={{mr: 0.5}}>₹</Typography> } as any }}
                   />
                   <TextField 
                     size="small" type="number" label="No. of Pieces" 
@@ -1862,6 +2388,113 @@ const ProjectDetails: React.FC = () => {
         <Box sx={{ p: 2, display: 'flex', justifyContent: 'flex-end', gap: 2, bgcolor: '#FAFAFA' }}>
           <Button onClick={() => setIsProductDialogOpen(false)} color="inherit">Cancel</Button>
           <Button variant="contained" onClick={handleSaveProducts} sx={{ px: 4 }}>Save Products</Button>
+        </Box>
+      </Dialog>
+
+      {/* FILL CATEGORY COSTS DIALOG */}
+      <Dialog open={isCategoryCostsDialogOpen} onClose={() => setIsCategoryCostsDialogOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ fontWeight: 'bold' }}>
+          Additional Costs: {activeCostProductId && products.find(p => p.id === activeCostProductId)?.category}
+        </DialogTitle>
+        <DialogContent dividers>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 3, p: 1 }}>
+            {activeCostProductId && quoteDetails[activeCostProductId] && quoteDetails[activeCostProductId].map((item: any) => (
+              <Box key={item.id} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <TextField 
+                  fullWidth 
+                  type="number"
+                  label={item.name} 
+                  value={item.amount === 0 ? '' : item.amount}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setQuoteDetails(prev => {
+                      const list = prev[activeCostProductId] || getDefaultCosts();
+                      return { ...prev, [activeCostProductId]: list.map(c => c.id === item.id ? { ...c, amount: val } : c) };
+                    });
+                  }}
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                />
+              </Box>
+            ))}
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, display: 'flex', justifyContent: 'space-between' }}>
+          <Button color="inherit" onClick={() => {
+            setCustomCostName('');
+            setIsCostDialogOpen(true);
+          }}>+ Manage Cost Items</Button>
+          <Box>
+            <Button onClick={() => setIsCategoryCostsDialogOpen(false)} variant="contained" color="primary">Done</Button>
+          </Box>
+        </DialogActions>
+      </Dialog>
+
+      {/* ADD/EDIT ADDITIONAL COST DIALOG */}
+      <Dialog open={isCostDialogOpen} onClose={() => setIsCostDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 'bold' }}>Manage Cost Items</DialogTitle>
+        <DialogContent dividers sx={{ pt: 2, pb: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          
+          <Box sx={{ display: 'flex', gap: 2 }}>
+             <TextField 
+                label="New Cost Item Name (e.g. Custom Polish)" 
+                fullWidth 
+                size="small"
+                value={customCostName} 
+                onChange={(e) => setCustomCostName(e.target.value)} 
+             />
+             <Button 
+                variant="contained"
+                onClick={() => {
+                  if (customCostName.trim() && products.length > 0) {
+                    setQuoteDetails(prev => {
+                      const newState = { ...prev };
+                      const newCostId = `cost_${new Date().getTime()}`;
+                      products.forEach(p => {
+                         const list = newState[p.id] || getDefaultCosts();
+                         newState[p.id] = [
+                           ...list,
+                           { id: newCostId, name: customCostName.trim(), amount: 0 }
+                         ];
+                      });
+                      return newState;
+                    });
+                    setCustomCostName('');
+                  }
+                }}
+             >Add Field</Button>
+          </Box>
+
+          <Divider sx={{ my: 1 }} />
+          <Typography variant="subtitle2" color="text.secondary">Current Cost Items</Typography>
+          
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, maxHeight: 300, overflowY: 'auto', p: 1 }}>
+             {products.length > 0 && (quoteDetails[products[0].id] || getDefaultCosts()).map((item: any) => (
+                <Box key={item.id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 1, border: '1px solid #eee', borderRadius: 2 }}>
+                   <Typography variant="body2">{item.name}</Typography>
+                   <IconButton 
+                     size="small" 
+                     color="error" 
+                     onClick={() => {
+                        if (window.confirm(`Are you sure you want to permanently remove "${item.name}" from ALL products?`)) {
+                           setQuoteDetails(prev => {
+                             const newState = { ...prev };
+                             products.forEach(p => {
+                               const list = newState[p.id] || [];
+                               newState[p.id] = list.filter(c => c.id !== item.id);
+                             });
+                             return newState;
+                           });
+                        }
+                     }}
+                   >
+                     <RemoveIcon />
+                   </IconButton>
+                </Box>
+             ))}
+          </Box>
+        </DialogContent>
+        <Box sx={{ p: 2, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+          <Button onClick={() => setIsCostDialogOpen(false)} color="inherit">Close</Button>
         </Box>
       </Dialog>
 

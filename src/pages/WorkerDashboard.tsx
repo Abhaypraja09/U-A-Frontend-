@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Box, Typography, Button, Paper, TextField, MenuItem, CircularProgress, Alert, Snackbar, Divider, Avatar, Dialog, DialogTitle, DialogContent, DialogActions, IconButton, Chip } from '@mui/material';
-import { useGetMachinesQuery, usePunchInMutation, usePunchOutMutation, useGetActiveSessionQuery, useMachineClockInMutation, useGetDailyMachineLogsQuery, useMachineClockOutMutation, useCreateMaterialLogMutation, useGetStaffListQuery } from '../store/apiSlice';
+import { useGetMachinesQuery, usePunchInMutation, usePunchOutMutation, useGetActiveSessionQuery, useMachineClockInMutation, useGetDailyMachineLogsQuery, useMachineClockOutMutation, useCreateMaterialLogMutation, useGetStaffListQuery, useGetActiveOutLogsQuery, useGetProjectsQuery } from '../store/apiSlice';
 import { useDispatch, useSelector } from 'react-redux';
 import { logout } from '../store/authSlice';
 import { useNavigate } from 'react-router-dom';
@@ -62,14 +62,21 @@ const WorkerDashboard: React.FC = () => {
   const [createMaterialLog, { isLoading: creatingMaterial }] = useCreateMaterialLogMutation();
   const { data: activeMachineLogs, refetch: refetchMachineLogs } = useGetDailyMachineLogsQuery();
   const { data: staffList } = useGetStaffListQuery();
+  const { data: activeOutLogs, refetch: refetchActiveOutLogs } = useGetActiveOutLogsQuery(undefined, {
+    skip: !activeSession
+  });
   
+  const { data: projectsData } = useGetProjectsQuery();
   const [selectedMachine, setSelectedMachine] = useState('');
+  const [selectedProjectId, setSelectedProjectId] = useState('');
+  const [selectedProductId, setSelectedProductId] = useState('');
   const [photos, setPhotos] = useState({ machine: '', unit: '', software: '' });
   const [startMachineDialogOpen, setStartMachineDialogOpen] = useState(false);
   
   const [selectedEndMachine, setSelectedEndMachine] = useState('');
   const [endPhotos, setEndPhotos] = useState({ machine: '', unit: '', software: '' });
   const [endRemarks, setEndRemarks] = useState('');
+  const [endQuantity, setEndQuantity] = useState('');
   const [endMachineDialogOpen, setEndMachineDialogOpen] = useState(false);
   
   const [attendancePhoto, setAttendancePhoto] = useState('');
@@ -83,6 +90,7 @@ const WorkerDashboard: React.FC = () => {
   const [assigneeType, setAssigneeType] = useState<'self'|'worker'|'vendor'>('self');
   const [selectedStaffId, setSelectedStaffId] = useState('');
   const [vendorName, setVendorName] = useState('');
+  const [selectedOutLogId, setSelectedOutLogId] = useState('');
 
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' as 'success'|'error' });
   
@@ -165,15 +173,28 @@ const WorkerDashboard: React.FC = () => {
 
   const handleMachineClockIn = async () => {
     try {
+      // Find selected product name for payload
+      const selectedProject = projectsData?.find((p: any) => p.id === selectedProjectId);
+      let productName = '';
+      if (selectedProject && selectedProject.quotations && selectedProject.quotations.length > 0) {
+        const prod = selectedProject.quotations[0].products?.find((p: any) => p.id === selectedProductId);
+        if (prod) productName = prod.name;
+      }
+      
       await machineClockIn({ 
         machineId: selectedMachine, 
         machinePhotoUrl: photos.machine,
         unitPhotoUrl: photos.unit,
         softwarePhotoUrl: photos.software,
-        remarks: ''
+        remarks: '',
+        projectId: selectedProjectId || undefined,
+        productId: selectedProductId || undefined,
+        productName: productName || undefined
       }).unwrap();
       showToast("Machine Log started successfully!");
       setSelectedMachine('');
+      setSelectedProjectId('');
+      setSelectedProductId('');
       setPhotos({ machine: '', unit: '', software: '' });
       setStartMachineDialogOpen(false);
       refetchMachineLogs();
@@ -200,11 +221,13 @@ const WorkerDashboard: React.FC = () => {
         remarks: endRemarks,
         endMachinePhotoUrl: endPhotos.machine,
         endUnitPhotoUrl: endPhotos.unit,
-        endSoftwarePhotoUrl: endPhotos.software
+        endSoftwarePhotoUrl: endPhotos.software,
+        quantityProduced: endQuantity ? parseFloat(endQuantity) : 0
       }).unwrap();
       showToast("Machine Log ended successfully!");
       setSelectedEndMachine('');
       setEndRemarks('');
+      setEndQuantity('');
       setEndPhotos({ machine: '', unit: '', software: '' });
       setEndMachineDialogOpen(false);
       refetchMachineLogs();
@@ -221,21 +244,29 @@ const WorkerDashboard: React.FC = () => {
     setAssigneeType('self');
     setSelectedStaffId('');
     setVendorName('');
+    setSelectedOutLogId('');
+    if (type === 'IN') {
+      refetchActiveOutLogs();
+    }
     setMaterialDialogOpen(true);
   };
 
   const handleMaterialSubmit = async () => {
     try {
       await createMaterialLog({
-        stage: materialStage,
+        stage: materialType === 'IN' ? 'Material Return' : materialStage,
         quantityProduced: materialQuantity,
         transactionType: materialType,
         startPhotos: materialPhotos,
         workerId: assigneeType === 'self' ? user?.id : (assigneeType === 'worker' ? selectedStaffId : undefined),
-        vendorName: assigneeType === 'vendor' ? vendorName : undefined
+        vendorName: assigneeType === 'vendor' ? vendorName : undefined,
+        parentLogId: undefined // Admin will assign project/category during approval instead of linking to parent OUT log directly
       }).unwrap();
       showToast(`Material ${materialType} logged successfully! Waiting for Admin approval.`);
       setMaterialDialogOpen(false);
+      if (materialType === 'IN') {
+        refetchActiveOutLogs();
+      }
     } catch (err: any) {
       showToast(err.data?.message || "Failed to submit material log.", 'error');
     }
@@ -336,7 +367,7 @@ const WorkerDashboard: React.FC = () => {
                       <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'success.main' }} />
                       {log.machine?.name}
                     </Typography>
-                    <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5 }}>Operator: {log.operator?.name || 'Unknown'}</Typography>
+                    <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5 }}>Client: {log.project?.clientName || 'General / Walk-in'}</Typography>
                     {log.project && <Typography variant="body2" color="textSecondary">Project: {log.project?.projectId}</Typography>}
                     <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 0.5, fontWeight: 'bold' }}>
                       Started at: {new Date(log.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
@@ -430,6 +461,8 @@ const WorkerDashboard: React.FC = () => {
                 )) : <MenuItem value="" disabled>No machines available</MenuItem>}
               </TextField>
 
+
+
               <Box>
                 <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 2 }}>2. Upload Mandatory Photos</Typography>
                 <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', pb: 1 }}>
@@ -462,7 +495,7 @@ const WorkerDashboard: React.FC = () => {
           </DialogTitle>
           <DialogContent dividers>
             <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-              Select the active machine, add closing remarks, and upload the 3 final photos.
+              Select the active machine, enter quantity produced, add closing remarks, and upload the 3 final photos.
             </Typography>
             
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -476,14 +509,23 @@ const WorkerDashboard: React.FC = () => {
               >
                 {activeMachineLogs?.filter((l: any) => l.status === 'active').map((log: any) => (
                   <MenuItem key={log.id} value={log.id}>
-                    {log.machine?.name} (Operator: {log.operator?.name || 'Unknown'})
+                    {log.machine?.name} (Client: {log.project?.clientName || 'General / Walk-in'})
                   </MenuItem>
                 ))}
               </TextField>
 
               <TextField 
                 fullWidth 
-                label="2. Work Completed / Remarks" 
+                label="2. Quantity Produced (Pieces/Sq.Ft)" 
+                type="number"
+                value={endQuantity}
+                onChange={(e) => setEndQuantity(e.target.value)}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
+              />
+
+              <TextField 
+                fullWidth 
+                label="3. Work Completed / Remarks" 
                 multiline 
                 rows={3}
                 value={endRemarks}
@@ -492,7 +534,7 @@ const WorkerDashboard: React.FC = () => {
               />
 
               <Box>
-                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 2 }}>3. Upload Final Photos</Typography>
+                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 2 }}>4. Upload Final Photos</Typography>
                 <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', pb: 1 }}>
                   <ImageUploadBox label="MACHINE" previewUrl={endPhotos.machine} onClick={() => startCamera('end_machine')} />
                   <ImageUploadBox label="STONE/UNIT" previewUrl={endPhotos.unit} onClick={() => startCamera('end_unit')} />
@@ -508,7 +550,7 @@ const WorkerDashboard: React.FC = () => {
               variant="contained" 
               color="error" 
               onClick={handleMachineClockOut}
-              disabled={!selectedEndMachine || !endPhotos.machine || !endPhotos.unit || !endPhotos.software || clockingOut}
+              disabled={!selectedEndMachine || !endPhotos.machine || !endPhotos.unit || !endPhotos.software || !endQuantity || clockingOut}
               sx={{ fontWeight: 'bold' }}
             >
               {clockingOut ? 'Ending...' : 'Submit & End Work'}
@@ -528,58 +570,49 @@ const WorkerDashboard: React.FC = () => {
             </Typography>
             
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <TextField 
-                select
-                label="1. Select Work Stage" 
-                fullWidth 
-                value={materialStage} 
-                onChange={(e) => setMaterialStage(e.target.value)} 
-                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
-              >
-                {['CNC Carving', 'Inlay Work', 'Hand Carving', 'Polishing', 'Finishing', 'Assembly', 'Packing Preparation'].map((stage) => (
-                  <MenuItem key={stage} value={stage}>{stage}</MenuItem>
-                ))}
-              </TextField>
-
-              <Box sx={{ display: 'flex', gap: 2 }}>
-                <TextField 
-                  select
-                  label="Assign To" 
-                  fullWidth 
-                  value={assigneeType} 
-                  onChange={(e) => setAssigneeType(e.target.value as any)} 
-                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
-                >
-                  <MenuItem value="self">Myself ({user?.name || 'Worker'})</MenuItem>
-                  <MenuItem value="worker">Other Staff Member</MenuItem>
-                  <MenuItem value="vendor">External Vendor</MenuItem>
-                </TextField>
-
-                {assigneeType === 'worker' && (
+              {materialType === 'OUT' && (
+                <>
                   <TextField 
                     select
-                    label="Select Staff" 
+                    label="Select Work Stage" 
                     fullWidth 
-                    value={selectedStaffId} 
-                    onChange={(e) => setSelectedStaffId(e.target.value)} 
+                    value={materialStage} 
+                    onChange={(e) => setMaterialStage(e.target.value)} 
                     sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
                   >
-                    {staffList?.map((staff: any) => (
-                      <MenuItem key={staff.id} value={staff.id}>{staff.name}</MenuItem>
+                    {['CNC Carving', 'Inlay Work', 'Hand Carving', 'Polishing', 'Finishing', 'Assembly', 'Packing Preparation'].map((stage) => (
+                      <MenuItem key={stage} value={stage}>{stage}</MenuItem>
                     ))}
                   </TextField>
-                )}
 
-                {assigneeType === 'vendor' && (
-                  <TextField 
-                    label="Vendor Name" 
-                    fullWidth 
-                    value={vendorName} 
-                    onChange={(e) => setVendorName(e.target.value)} 
-                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
-                  />
-                )}
-              </Box>
+                  <Box sx={{ display: 'flex', gap: 2 }}>
+                    {assigneeType === 'worker' && (
+                      <TextField 
+                        select
+                        label="Select Staff" 
+                        fullWidth 
+                        value={selectedStaffId} 
+                        onChange={(e) => setSelectedStaffId(e.target.value)} 
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
+                      >
+                        {staffList?.map((staff: any) => (
+                          <MenuItem key={staff.id} value={staff.id}>{staff.name}</MenuItem>
+                        ))}
+                      </TextField>
+                    )}
+
+                    {assigneeType === 'vendor' && (
+                      <TextField 
+                        label="Vendor Name" 
+                        fullWidth 
+                        value={vendorName} 
+                        onChange={(e) => setVendorName(e.target.value)} 
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
+                      />
+                    )}
+                  </Box>
+                </>
+              )}
 
               <TextField 
                 fullWidth 

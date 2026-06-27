@@ -5,7 +5,7 @@ import { useSelector } from 'react-redux';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 
-const drawerWidth = 240;
+const drawerWidth = 280;
 
 const Layout: React.FC = () => {
   const [mobileOpen, setMobileOpen] = useState(false);

@@ -15,6 +15,7 @@ import Dashboard from './pages/Dashboard';
 import LiveFeed from './pages/LiveFeed';
 import Machines from './pages/Machines';
 import ProjectDetails from './pages/ProjectDetails';
+import LogBook from './pages/LogBook';
 
 import Login from './pages/Login';
 import WorkerDashboard from './pages/WorkerDashboard';
@@ -39,6 +40,10 @@ const router = createBrowserRouter([
       {
         path: 'live-feed',
         element: <LiveFeed />
+      },
+      {
+        path: 'log-book',
+        element: <LogBook />
       },
       {
         path: 'crm',

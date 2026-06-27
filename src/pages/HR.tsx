@@ -97,7 +97,7 @@ const HR: React.FC = () => {
                   <TableRow key={record.id} hover>
                     <TableCell>{record.user?.name}</TableCell>
                     <TableCell>{record.user?.department || 'N/A'}</TableCell>
-                    <TableCell>{new Date(record.date).toLocaleDateString()}</TableCell>
+                    <TableCell>{new Date(record.date).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' })}</TableCell>
                     <TableCell>{record.checkIn ? new Date(record.checkIn).toLocaleTimeString() : 'N/A'}</TableCell>
                     <TableCell>
                       <Chip 
@@ -165,16 +165,12 @@ const HR: React.FC = () => {
                 value={staffData.name} onChange={(e) => setStaffData({...staffData, name: e.target.value})}
               />
               <TextField 
-                label="Staff ID (e.g., EMP001)" fullWidth required 
+                label="Username / Staff ID" fullWidth required 
                 value={staffData.staffId} onChange={(e) => setStaffData({...staffData, staffId: e.target.value})}
               />
             </Box>
             
             <Box sx={{ display: 'flex', gap: 2 }}>
-              <TextField 
-                label="Email (Optional)" fullWidth type="email"
-                value={staffData.email} onChange={(e) => setStaffData({...staffData, email: e.target.value})}
-              />
               <TextField 
                 label="Password" fullWidth required type="password"
                 value={staffData.password} onChange={(e) => setStaffData({...staffData, password: e.target.value})}

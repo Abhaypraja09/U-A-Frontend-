@@ -81,7 +81,11 @@ const CRM: React.FC = () => {
             try {
               const res = await uploadFiles(uploadData).unwrap();
               if (res.success && res.urls.length > 0) {
-                setFormData({ ...formData, customerPhoto: res.urls[0] });
+                const url = res.urls[0];
+                setFormData(prev => {
+                  const existing = prev.customerPhoto ? prev.customerPhoto.split(',').filter(Boolean) : [];
+                  return { ...prev, customerPhoto: [...existing, url].join(',') };
+                });
               }
             } catch (err) {
               console.error('Failed to upload client photo', err);
@@ -347,7 +351,7 @@ const CRM: React.FC = () => {
                       size="small" 
                     />
                   </TableCell>
-                  <TableCell>{new Date(enq.createdAt).toLocaleDateString('en-GB')}</TableCell>
+                  <TableCell>{new Date(enq.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' })}</TableCell>
                   <TableCell align="right" onClick={(e) => e.stopPropagation()}>
                     <IconButton color="primary" onClick={() => handleOpenEdit(enq)} size="small" sx={{ mr: 1 }}>
                       <EditIcon fontSize="small" />
@@ -422,111 +426,117 @@ const CRM: React.FC = () => {
               slotProps={{ inputLabel: { shrink: true } }}
             />
             <Box>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontWeight: 'bold' }}>Client Photo</Typography>
-              <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                {formData.customerPhoto ? (
-                  <Box sx={{ position: 'relative', width: 80, height: 80, border: '1px solid #CCC', borderRadius: 2, overflow: 'hidden' }}>
-                    <img src={formData.customerPhoto} alt="Client Photo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, fontWeight: 'bold' }}>Client Photos</Typography>
+              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
+                {formData.customerPhoto && formData.customerPhoto.split(',').filter(Boolean).map((photoUrl: string, idx: number) => (
+                  <Box key={idx} sx={{ position: 'relative', width: 80, height: 80, border: '1px solid #CCC', borderRadius: 2, overflow: 'hidden' }}>
+                    <img src={photoUrl} alt={`Client Photo ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     <IconButton 
                       size="small" 
-                      onClick={() => setFormData({ ...formData, customerPhoto: '' })}
-                      sx={{ position: 'absolute', top: 2, right: 2, bgcolor: 'rgba(255, 255, 255, 0.7)', '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.9)' } }}
+                      onClick={() => {
+                        const updatedPhotos = formData.customerPhoto.split(',').filter(Boolean).filter((_, i) => i !== idx).join(',');
+                        setFormData({ ...formData, customerPhoto: updatedPhotos });
+                      }}
+                      sx={{ position: 'absolute', top: 2, right: 2, bgcolor: 'rgba(255, 255, 255, 0.8)', '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.95)' } }}
                     >
                       <CloseIcon fontSize="small" sx={{ color: 'error.main' }} />
                     </IconButton>
                   </Box>
-                ) : (
-                  <Box sx={{ display: 'flex', gap: 2 }}>
-                    <Button
-                      variant="outlined"
-                      component="label"
-                      disabled={isUploading}
-                      sx={{ 
-                        height: 100, 
-                        width: 130, 
-                        border: '1.5px dashed #B38B36', 
-                        bgcolor: '#FFFDF5', 
-                        borderRadius: 3, 
-                        display: 'flex', 
-                        flexDirection: 'column', 
-                        fontSize: '0.82rem', 
-                        color: '#B38B36', 
-                        justifyContent: 'center', 
-                        alignItems: 'center',
-                        textTransform: 'none', 
-                        fontWeight: '600',
-                        boxShadow: '0 2px 8px rgba(179, 139, 54, 0.04)',
-                        transition: 'all 0.2s ease-in-out',
-                        '&:hover': { 
-                          borderColor: '#B38B36', 
-                          bgcolor: '#FFF4E5', 
-                          color: '#B38B36',
-                          transform: 'translateY(-2px)',
-                          boxShadow: '0 4px 12px rgba(179, 139, 54, 0.15)'
-                        } 
-                      }}
-                    >
-                      <CloudUploadIcon sx={{ fontSize: '1.75rem', mb: 0.5, color: '#B38B36' }} />
-                      {isUploading ? 'Uploading...' : 'Upload Photo'}
-                      <input
-                        type="file"
-                        hidden
-                        accept="image/*"
-                        onChange={async (e) => {
-                          if (e.target.files && e.target.files.length > 0) {
-                            const file = e.target.files[0];
-                            const uploadData = new FormData();
-                            uploadData.append('files', file);
-                            try {
-                              const res = await uploadFiles(uploadData).unwrap();
-                              if (res.success && res.urls.length > 0) {
-                                setFormData({ ...formData, customerPhoto: res.urls[0] });
-                              }
-                            } catch (err) {
-                              console.error('Failed to upload client photo', err);
-                            }
-                          }
-                        }}
-                      />
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      disabled={isUploading}
-                      onClick={startCamera}
-                      sx={{ 
-                        height: 100, 
-                        width: 130, 
-                        border: '1.5px dashed #B38B36', 
-                        bgcolor: '#FFFDF5', 
-                        borderRadius: 3, 
-                        display: 'flex', 
-                        flexDirection: 'column', 
-                        fontSize: '0.82rem', 
-                        color: '#B38B36', 
-                        justifyContent: 'center', 
-                        alignItems: 'center',
-                        textTransform: 'none', 
-                        fontWeight: '600',
-                        boxShadow: '0 2px 8px rgba(179, 139, 54, 0.04)',
-                        transition: 'all 0.2s ease-in-out',
-                        '&:hover': { 
-                          borderColor: '#B38B36', 
-                          bgcolor: '#FFF4E5', 
-                          color: '#B38B36',
-                          transform: 'translateY(-2px)',
-                          boxShadow: '0 4px 12px rgba(179, 139, 54, 0.15)'
-                        } 
-                      }}
-                    >
-                      <CameraAltIcon sx={{ fontSize: '1.75rem', mb: 0.5, color: '#B38B36' }} />
-                      Take Photo
-                    </Button>
-                  </Box>
-                )}
-                {formData.customerPhoto && (
-                  <Typography variant="caption" color="success.main" sx={{ fontWeight: 'bold' }}>Photo Uploaded Successfully</Typography>
-                )}
+                ))}
               </Box>
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                <Button
+                  variant="outlined"
+                  component="label"
+                  disabled={isUploading}
+                  sx={{ 
+                    height: 100, 
+                    width: 130, 
+                    border: '1.5px dashed #B38B36', 
+                    bgcolor: '#FFFDF5', 
+                    borderRadius: 3, 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    fontSize: '0.82rem', 
+                    color: '#B38B36', 
+                    justifyContent: 'center', 
+                    alignItems: 'center',
+                    textTransform: 'none', 
+                    fontWeight: '600',
+                    boxShadow: '0 2px 8px rgba(179, 139, 54, 0.04)',
+                    transition: 'all 0.2s ease-in-out',
+                    '&:hover': { 
+                      borderColor: '#B38B36', 
+                      bgcolor: '#FFF4E5', 
+                      color: '#B38B36',
+                      transform: 'translateY(-2px)',
+                      boxShadow: '0 4px 12px rgba(179, 139, 54, 0.15)'
+                    } 
+                  }}
+                >
+                  <CloudUploadIcon sx={{ fontSize: '1.75rem', mb: 0.5, color: '#B38B36' }} />
+                  {isUploading ? 'Uploading...' : 'Upload Photos'}
+                  <input
+                    type="file"
+                    hidden
+                    multiple
+                    accept="image/*"
+                    onChange={async (e) => {
+                      if (e.target.files && e.target.files.length > 0) {
+                        const uploadData = new FormData();
+                        Array.from(e.target.files).forEach(f => uploadData.append('files', f));
+                        try {
+                          const res = await uploadFiles(uploadData).unwrap();
+                          if (res.success && res.urls.length > 0) {
+                            const existingPhotos = formData.customerPhoto ? formData.customerPhoto.split(',').filter(Boolean) : [];
+                            const newPhotos = [...existingPhotos, ...res.urls].join(',');
+                            setFormData({ ...formData, customerPhoto: newPhotos });
+                          }
+                        } catch (err) {
+                          console.error('Failed to upload client photo', err);
+                        }
+                      }
+                    }}
+                  />
+                </Button>
+                <Button
+                  variant="outlined"
+                  disabled={isUploading}
+                  onClick={startCamera}
+                  sx={{ 
+                    height: 100, 
+                    width: 130, 
+                    border: '1.5px dashed #B38B36', 
+                    bgcolor: '#FFFDF5', 
+                    borderRadius: 3, 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    fontSize: '0.82rem', 
+                    color: '#B38B36', 
+                    justifyContent: 'center', 
+                    alignItems: 'center',
+                    textTransform: 'none', 
+                    fontWeight: '600',
+                    boxShadow: '0 2px 8px rgba(179, 139, 54, 0.04)',
+                    transition: 'all 0.2s ease-in-out',
+                    '&:hover': { 
+                      borderColor: '#B38B36', 
+                      bgcolor: '#FFF4E5', 
+                      color: '#B38B36',
+                      transform: 'translateY(-2px)',
+                      boxShadow: '0 4px 12px rgba(179, 139, 54, 0.15)'
+                    } 
+                  }}
+                >
+                  <CameraAltIcon sx={{ fontSize: '1.75rem', mb: 0.5, color: '#B38B36' }} />
+                  Take Photo
+                </Button>
+              </Box>
+              {formData.customerPhoto && formData.customerPhoto.split(',').filter(Boolean).length > 0 && (
+                <Typography variant="caption" color="success.main" sx={{ fontWeight: 'bold', mt: 1, display: 'block' }}>
+                  {formData.customerPhoto.split(',').filter(Boolean).length} Photo(s) Uploaded Successfully
+                </Typography>
+              )}
             </Box>
           </Box>
         </DialogContent>

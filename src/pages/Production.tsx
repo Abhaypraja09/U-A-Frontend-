@@ -130,7 +130,7 @@ const Production: React.FC = () => {
                       />
                     </TableCell>
                     <TableCell>
-                      <Typography variant="body2">{new Date(log.startTime).toLocaleDateString()}</Typography>
+                      <Typography variant="body2">{new Date(log.startTime).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' })}</Typography>
                       <Typography variant="caption" color="textSecondary">{new Date(log.startTime).toLocaleTimeString()}</Typography>
                     </TableCell>
                     <TableCell>{log.machine?.name || 'Manual Labor'}</TableCell>
@@ -308,7 +308,7 @@ const Production: React.FC = () => {
                   </TableCell>
                   <TableCell>{log.worker?.name || 'Unknown'}</TableCell>
                   <TableCell sx={{ fontWeight: 'bold' }}>{log.quantityProduced}</TableCell>
-                  <TableCell>{new Date(log.createdAt).toLocaleDateString()}</TableCell>
+                  <TableCell>{new Date(log.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' })}</TableCell>
                 </TableRow>
               )) : (
                 <TableRow>

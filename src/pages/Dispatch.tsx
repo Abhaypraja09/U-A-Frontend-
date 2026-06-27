@@ -62,7 +62,7 @@ const Dispatch: React.FC = () => {
                   <TableCell sx={{ fontWeight: 'bold' }}>{dispatch.vehicleNumber}</TableCell>
                   <TableCell>{dispatch.driverDetails || 'N/A'}</TableCell>
                   <TableCell sx={{ color: 'text.secondary' }}>{dispatch.lrNumber || 'N/A'}</TableCell>
-                  <TableCell>{new Date(dispatch.dispatchDate).toLocaleDateString()}</TableCell>
+                  <TableCell>{new Date(dispatch.dispatchDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' })}</TableCell>
                   <TableCell>
                     <Chip 
                       label={dispatch.status.replace('_', ' ').toUpperCase()} 
